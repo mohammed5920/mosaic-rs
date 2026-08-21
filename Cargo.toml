@@ -3,4 +3,14 @@ name = "mosaic-rs"
 version = "2.0.0"
 edition = "2024"
 
+[profile.dev.package."*"] #otherwise it's crazy slow
+opt-level = 3
+
+[profile.release] 
+lto = "thin"
+strip = true 
+
 [dependencies]
+anyhow = { version = "1.0.104", default-features = false }
+image = { version = "0.25.10", default-features = false, features=["bmp", "dds", "gif", "ico", "jpeg", "png", "rayon", "webp"] }
+rayon = { version = "1.12.0", default-features = false }
