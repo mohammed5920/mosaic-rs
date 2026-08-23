@@ -1,9 +1,15 @@
+pub mod matchmaker;
+pub mod rendering;
 pub mod source;
 pub mod tiles;
 
-use std::{collections::HashSet, fs, io, path::Path, sync::LazyLock, time::Instant};
+use std::{collections::HashSet, fmt::Debug, fs, path::Path, sync::LazyLock, time::Instant};
 
+use anyhow::{Context, anyhow};
 use camino::Utf8PathBuf;
+use image::{ImageBuffer, Rgb};
+
+pub type RgbBuffer = ImageBuffer<Rgb<u8>, Vec<u8>>;
 
 static PIC_EXTENSIONS: LazyLock<HashSet<String>> = LazyLock::new(|| {
     ["bmp", "dds", "gif", "ico", "jpeg", "png", "webp", "jpg"]
@@ -37,17 +43,18 @@ pub fn check_supported_extension(path: &Utf8PathBuf) -> MediaType {
     }
 }
 
-pub fn walk_dir(path: impl AsRef<Path>) -> io::Result<Vec<Utf8PathBuf>> {
+pub fn walk_dir(path: impl AsRef<Path> + Debug) -> anyhow::Result<Vec<Utf8PathBuf>> {
     let mut res = Vec::new();
-    for entry in fs::read_dir(path)? {
-        let entry = entry?;
-        if entry.file_type()?.is_dir() {
+    for entry in fs::read_dir(&path).with_context(|| format!("{path:?}"))? {
+        let entry = entry.with_context(|| format!("{path:?}"))?;
+        if entry
+            .file_type()
+            .with_context(|| format!("{path:?}"))?
+            .is_dir()
+        {
             res.append(&mut walk_dir(entry.path())?);
         } else {
-            res.push(
-                Utf8PathBuf::from_path_buf(entry.path())
-                    .map_err(|_| io::ErrorKind::InvalidFilename)?,
-            );
+            res.push(Utf8PathBuf::from_path_buf(entry.path()).map_err(|e| anyhow!("{e:?}"))?);
         }
     }
     Ok(res)

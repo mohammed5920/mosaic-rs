@@ -16,8 +16,8 @@ pub enum Source {
 impl Source {
     pub fn open(path: &Utf8PathBuf, dscale_factor: NonZero<u32>) -> anyhow::Result<Source> {
         match check_supported_extension(path) {
-            MediaType::Pic => Ok(Source::Pic(PicSource::open(path, dscale_factor)?)),
-            MediaType::Vid => Ok(Source::Vid),
+            MediaType::Pic => Ok(Source::Pic(PicSource::from_path(path, dscale_factor)?)),
+            MediaType::Vid => todo!(),
             MediaType::Etc => Err(anyhow!("Unrecognised source extension")),
         }
     }
