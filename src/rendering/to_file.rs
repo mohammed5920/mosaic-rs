@@ -5,7 +5,7 @@ use rustc_hash::FxBuildHasher;
 
 use crate::{source::pic_source::PicSource, tiles::Tile};
 
-pub fn save_as_jpeg(
+pub fn save_to_file(
     source: &PicSource,
     tiles: &[Tile],
     tile_size: u64,

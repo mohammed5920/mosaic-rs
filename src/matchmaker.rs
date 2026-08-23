@@ -6,7 +6,7 @@ use crate::tiles::Tile;
 
 pub struct Matchmaker {
     kiddie: ImmutableKdTree<u8, 3>,
-    //with capacity 16_777_215
+    //with capacity 16_777_216
     colour_map: Vec<AtomicI32>,
 }
 

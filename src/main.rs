@@ -5,7 +5,7 @@ use std::{num::NonZero, str::FromStr};
 use anyhow::bail;
 use camino::Utf8PathBuf;
 use mosaic_rs::{
-    benchmark, matchmaker::Matchmaker, rendering::to_file::save_as_jpeg, source::Source,
+    benchmark, matchmaker::Matchmaker, rendering::to_file::save_to_file, source::Source,
     tiles::load_tiles,
 };
 
@@ -30,7 +30,7 @@ fn main() -> anyhow::Result<()> {
         matchmaker.matchmake(pic_source.as_pixels())
     });
     benchmark("rendering test image", || {
-        save_as_jpeg(
+        save_to_file(
             &pic_source,
             &tiles,
             TILE_DEBUG_SIZE,

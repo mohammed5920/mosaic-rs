@@ -4,9 +4,7 @@ pub mod vid_tiles;
 use camino::Utf8PathBuf;
 use rayon::prelude::*;
 
-use crate::{
-    MediaType, RgbBuffer, benchmark, check_supported_extension, tiles::pic_tiles::PicTile, walk_dir,
-};
+use crate::{MediaType, RgbBuffer, check_supported_extension, tiles::pic_tiles::PicTile, walk_dir};
 
 //NOTE: this is single threaded because we parallelise the creation of many tiles instead
 pub fn imagebuffer_average(imgbuff: &RgbBuffer) -> [u8; 3] {
@@ -47,8 +45,7 @@ impl Tile {
 }
 
 pub fn load_tiles(path: &Utf8PathBuf, tile_base_res: u64) -> anyhow::Result<Vec<Tile>> {
-    let walked = benchmark("walking tile dir", || walk_dir(path))?;
-    let res = walked
+    let res = walk_dir(path)?
         .into_par_iter()
         .filter_map(|file_path| match check_supported_extension(&file_path) {
             MediaType::Pic => PicTile::from_path(file_path.clone())
