@@ -9,11 +9,11 @@ use mosaic_rs::{
     tiles::load_tiles,
 };
 
+const TILE_BASE_RES: u64 = 64;
 const SOURCE: &str = "test/source.jpg";
 const TILES: &str = "test/pic_tiles";
-const TILE_BASE_RES: u64 = 64;
 const SOURCE_DSCALE: NonZero<u32> = NonZero::new(1).unwrap();
-const TILE_DEBUG_SIZE: u64 = 32;
+const TILE_DEBUG_SIZE: u64 = 1;
 
 fn main() -> anyhow::Result<()> {
     let Source::Pic(pic_source) = benchmark("loading source", || {

@@ -5,24 +5,25 @@ use camino::Utf8PathBuf;
 use rayon::prelude::*;
 
 use crate::{
-    RgbBuffer,
     file_io::{MediaType, check_supported_extension, walk_dir},
-    tiles::pic_tiles::PicTile,
+    tiles::{
+        pic_tiles::PicTile,
+        vid_tiles::{VidTile, vid_tiles_from_path},
+    },
 };
 
 //NOTE: this is single threaded because we parallelise the creation of many tiles instead
-pub fn imagebuffer_average(imgbuff: &RgbBuffer) -> [u8; 3] {
+pub fn calc_average_colour(pixels: &[[u8; 3]]) -> [u8; 3] {
     let mut sums = [0u64; 3];
-    for chunk in imgbuff.as_chunks::<3>().0 {
-        sums[0] += chunk[0] as u64;
-        sums[1] += chunk[1] as u64;
-        sums[2] += chunk[2] as u64;
+    for pixel in pixels.iter() {
+        sums[0] += pixel[0] as u64;
+        sums[1] += pixel[1] as u64;
+        sums[2] += pixel[2] as u64;
     }
-    let n = (imgbuff.len() / 3) as u64;
     [
-        (sums[0] / n) as u8,
-        (sums[1] / n) as u8,
-        (sums[2] / n) as u8,
+        (sums[0] / pixels.len() as u64) as u8,
+        (sums[1] / pixels.len() as u64) as u8,
+        (sums[2] / pixels.len() as u64) as u8,
     ]
 }
 
@@ -36,14 +37,14 @@ pub fn get_crop_offsets(width: u32, height: u32) -> (u32, u32, u32, u32) {
 
 pub enum Tile {
     Pic(PicTile),
-    Vid,
+    Vid(VidTile),
 }
 
 impl Tile {
     pub fn average_colour(&self) -> [u8; 3] {
         match self {
-            Tile::Pic(pic_tile) => pic_tile.avg_colour,
-            Tile::Vid => todo!(),
+            Tile::Pic(pic_tile) => pic_tile.average_colour,
+            Tile::Vid(vid_tile) => vid_tile.average_colour,
         }
     }
 }
@@ -55,10 +56,16 @@ pub fn load_tiles(path: &Utf8PathBuf, tile_base_res: u64) -> anyhow::Result<Vec<
             MediaType::Pic => PicTile::from_path(file_path.clone())
                 .inspect_err(|e| eprintln!("{file_path} - {e:?}"))
                 .ok()
-                .map(Tile::Pic),
-            MediaType::Vid => todo!(),
+                .map(|t| vec![Tile::Pic(t)]),
+
+            MediaType::Vid => vid_tiles_from_path(file_path.clone(), tile_base_res)
+                .inspect_err(|e| eprintln!("{file_path} - {e:?}"))
+                .ok()
+                .map(|ts| ts.into_iter().map(Tile::Vid).collect()),
+
             MediaType::Etc => None,
         })
+        .flatten()
         .collect::<Vec<_>>();
 
     Ok(res)

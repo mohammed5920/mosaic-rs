@@ -1,20 +1,20 @@
 use camino::Utf8PathBuf;
 use image::{DynamicImage, ImageReader, ImageResult, imageops::FilterType};
 
-use crate::tiles::{get_crop_offsets, imagebuffer_average};
+use crate::tiles::{calc_average_colour, get_crop_offsets};
 
 pub struct PicTile {
+    pub average_colour: [u8; 3],
     source_path: Utf8PathBuf,
     //NOTE: remove this when renderer is started, to save RAM
     _cached_source: DynamicImage,
-    pub avg_colour: [u8; 3],
 }
 
 impl PicTile {
     pub fn from_path(path: Utf8PathBuf) -> ImageResult<PicTile> {
         let decoded = ImageReader::open(&path)?.decode()?;
         Ok(PicTile {
-            avg_colour: imagebuffer_average(&decoded.to_rgb8()),
+            average_colour: calc_average_colour(decoded.to_rgb8().into_raw().as_chunks::<3>().0),
             _cached_source: decoded,
             source_path: path,
         })
@@ -22,7 +22,7 @@ impl PicTile {
 
     pub fn load_as_res(&self, res: u64) -> ImageResult<Vec<u8>> {
         if res == 1 {
-            Ok((self.avg_colour).to_vec())
+            Ok((self.average_colour).to_vec())
         } else {
             let decoded = &self._cached_source;
             let (x, y, w, h) = get_crop_offsets(decoded.width(), decoded.height());
