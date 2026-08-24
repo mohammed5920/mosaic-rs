@@ -3,7 +3,10 @@ use std::num::NonZero;
 use anyhow::anyhow;
 use camino::Utf8PathBuf;
 
-use crate::{MediaType, check_supported_extension, source::pic_source::PicSource};
+use crate::{
+    file_io::{MediaType, check_supported_extension},
+    source::pic_source::PicSource,
+};
 
 pub mod pic_source;
 pub mod vid_source;

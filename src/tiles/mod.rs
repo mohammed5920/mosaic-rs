@@ -4,7 +4,11 @@ pub mod vid_tiles;
 use camino::Utf8PathBuf;
 use rayon::prelude::*;
 
-use crate::{MediaType, RgbBuffer, check_supported_extension, tiles::pic_tiles::PicTile, walk_dir};
+use crate::{
+    RgbBuffer,
+    file_io::{MediaType, check_supported_extension, walk_dir},
+    tiles::pic_tiles::PicTile,
+};
 
 //NOTE: this is single threaded because we parallelise the creation of many tiles instead
 pub fn imagebuffer_average(imgbuff: &RgbBuffer) -> [u8; 3] {
