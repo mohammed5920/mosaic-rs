@@ -1,5 +1,5 @@
 use {
-    crate::{CACHE_DIR, tiles::calc_average_colour, video::stream_whole_video},
+    crate::{CACHE_DIR, tiles::calc_average_colour},
     camino::Utf8PathBuf,
     imohash::Hasher as ImoHasher,
     std::{fs, str::FromStr},
@@ -30,9 +30,10 @@ pub fn vid_tiles_from_path(path: Utf8PathBuf, tile_base_res: u64) -> anyhow::Res
 
     let colours = match read_colour_cache(hash) {
         Some(colours) => colours,
-        None => stream_whole_video(&path, tile_base_res, tile_base_res)?
-            .map(|base_size_frame| calc_average_colour(&base_size_frame))
-            .collect(),
+        // None => stream_whole_video(&path, tile_base_res, tile_base_res)?
+        //     .map(|base_size_frame| calc_average_colour(&base_size_frame))
+        //     .collect(),
+        None => todo!(),
     };
 
     todo!()

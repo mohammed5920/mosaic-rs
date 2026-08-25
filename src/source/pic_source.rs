@@ -10,10 +10,7 @@ use crate::RgbBuffer;
 pub struct PicSource(RgbBuffer);
 
 impl PicSource {
-    pub fn from_path(
-        path: impl AsRef<Path>,
-        dscale_factor: NonZero<u32>,
-    ) -> ImageResult<PicSource> {
+    pub fn open(path: impl AsRef<Path>, dscale_factor: NonZero<u32>) -> ImageResult<PicSource> {
         let img = ImageReader::open(path)?.decode()?.into_rgb8();
         Ok(PicSource(resize(
             &img,

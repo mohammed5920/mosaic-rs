@@ -53,7 +53,7 @@ pub fn load_tiles(path: &Utf8PathBuf, tile_base_res: u64) -> anyhow::Result<Vec<
     let res = walk_dir(path)?
         .into_par_iter()
         .filter_map(|file_path| match check_supported_extension(&file_path) {
-            MediaType::Pic => PicTile::from_path(file_path.clone())
+            MediaType::Pic => PicTile::open(file_path.clone())
                 .inspect_err(|e| eprintln!("{file_path} - {e:?}"))
                 .ok()
                 .map(|t| vec![Tile::Pic(t)]),
