@@ -29,7 +29,7 @@ pub fn save_to_file(
             if let Entry::Vacant(e) = tile_cache.entry(tile_idx) {
                 e.insert(match &tiles[tile_idx as usize] {
                     Tile::Pic(pic_tile) => pic_tile.load_as_res(tile_size)?,
-                    Tile::Vid(_) => todo!(),
+                    Tile::Vid(vid_tile) => vid_tile.first_frame_as_res(tile_size),
                 });
             }
             tile_cache.get(&tile_idx).unwrap()

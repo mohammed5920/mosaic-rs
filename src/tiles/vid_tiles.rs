@@ -14,12 +14,12 @@ const DIFFERENCE_THRESHOLD: u32 = 300;
 // serialisation
 //
 #[derive(bincode::Decode, bincode::Encode)]
-struct VidTilePreview {
+pub struct VidTilePreview {
     //which frame in the original video is this tile from?
-    from_frame_index: u32,
-    width: u64,
-    height: u64,
-    pixels: Vec<[u8; 3]>,
+    pub from_frame_index: u32,
+    pub width: u64,
+    pub height: u64,
+    pub pixels: Vec<[u8; 3]>,
 }
 
 #[derive(bincode::Decode, bincode::Encode)]
@@ -280,10 +280,36 @@ fn process_video_for_vidtiles(
 
 pub struct VidTile {
     pub average_colour: [u8; 3],
-    source_path: Utf8PathBuf,
-    start_frame_index: u32,
-    end_frame_index: u32,
-    first_frame: VidTilePreview,
+    pub source_path: Utf8PathBuf,
+    pub start_frame_index: u32,
+    pub end_frame_index: u32,
+    pub first_frame: VidTilePreview,
+}
+
+impl VidTile {
+    pub fn first_frame_as_res(&self, res: u64) -> Vec<u8> {
+        if res == 1 {
+            return self.average_colour.to_vec();
+        }
+        let samples = image::FlatSamples {
+            samples: self.first_frame.pixels.as_flattened(), 
+            layout: image::flat::SampleLayout {
+                channels: 3,     
+                channel_stride: 1,
+                width: self.first_frame.width as u32,
+                height: self.first_frame.height as u32,
+                width_stride: 3,    
+                height_stride: (self.first_frame.height * 3) as usize,
+            },
+            color_hint: None,
+        };
+        let view = samples.as_view::<image::Rgb<u8>>().expect("Layout mismatch");
+        image::imageops::resize(
+            &view, 
+            res as u32, res as u32, 
+            image::imageops::FilterType::Triangle
+        ).to_vec()
+    }
 }
 
 pub fn vid_tiles_from_path(
@@ -297,6 +323,10 @@ pub fn vid_tiles_from_path(
 
     let res = match evaluate_vidtile_cache(&source_path, &cache_path) {
         CacheEvaluationResult::Valid { tiles } => return Ok(tiles),
+        CacheEvaluationResult::Unreadable { reason } => anyhow::bail!(reason),
+        CacheEvaluationResult::MissingOrCorrupt => {
+            process_video_for_vidtiles(&source_path, tile_base_res)
+        }
         CacheEvaluationResult::Stale {
             colors,
             fresh_preview_frame_indices,
@@ -314,10 +344,6 @@ pub fn vid_tiles_from_path(
                 }),
                 Some(fresh_preview_frame_indices),
             )
-        }
-        CacheEvaluationResult::Unreadable { reason } => anyhow::bail!(reason),
-        CacheEvaluationResult::MissingOrCorrupt => {
-            process_video_for_vidtiles(&source_path, tile_base_res)
         }
     };
 
