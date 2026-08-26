@@ -1,6 +1,6 @@
 use std::num::NonZero;
 
-use anyhow::anyhow;
+use anyhow::{Context, anyhow};
 use camino::Utf8PathBuf;
 
 use crate::{
@@ -19,7 +19,10 @@ pub enum Source {
 impl Source {
     pub fn open(path: &Utf8PathBuf, dscale_factor: NonZero<u32>) -> anyhow::Result<Source> {
         match check_supported_extension(path) {
-            MediaType::Pic => Ok(Source::Pic(PicSource::open(path, dscale_factor)?)),
+            MediaType::Pic => Ok(Source::Pic(
+                PicSource::open(path, dscale_factor)
+                    .with_context(|| format!("Error while opening {path} as source"))?,
+            )),
             MediaType::Vid => todo!(),
             MediaType::Etc => Err(anyhow!("Unrecognised source extension")),
         }

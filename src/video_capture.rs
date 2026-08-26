@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use camino::Utf8PathBuf;
 use ffmpeg_next as ffmpeg;
 
@@ -13,6 +15,18 @@ pub struct VideoCaptureFrame {
     pub height: u64,
     pub pixels: Vec<[u8; 3]>,
     pub frame_index: i64,
+}
+
+impl VideoCaptureFrame {
+    pub fn save_to_file(&self, path: impl AsRef<Path>) -> Result<(), image::ImageError> {
+        image::save_buffer(
+            path,
+            self.pixels.as_flattened(),
+            self.width as u32,
+            self.height as u32,
+            image::ColorType::Rgb8,
+        )
+    }
 }
 
 pub fn frame_idx_from_pts(
@@ -67,7 +81,10 @@ impl VideoCapture {
         let stream = input
             .streams()
             .best(ffmpeg::media::Type::Video)
-            .ok_or(ffmpeg::Error::StreamNotFound)?;
+            .ok_or_else(|| {
+                eprintln!("{path} - no valid streams found");
+                ffmpeg::Error::StreamNotFound
+            })?;
         let stream_index = stream.index();
         let stream_start_time = stream.start_time();
         let stream_frame_rate = stream.avg_frame_rate();
@@ -151,8 +168,11 @@ impl VideoCapture {
 
         let raw_frame = match res {
             Ok(None) => return Ok(None),
-            Err(e) => return Err(e),
             Ok(Some(raw_frame)) => raw_frame,
+            Err(e) => {
+                eprintln!("{} - {e} while seeking", self.path);
+                return Err(e);
+            }
         };
         let Some(frame_idx) = raw_frame.timestamp().and_then(|ts| {
             frame_idx_from_pts(
@@ -162,7 +182,7 @@ impl VideoCapture {
                 ts,
             )
         }) else {
-            eprintln!("{} - couldn't calculate frame_idx", self.path.clone());
+            eprintln!("{} - couldn't calculate frame_idx", self.path);
             return Err(ffmpeg::Error::InvalidData);
         };
         self.last_decoded_frame_index = Some(frame_idx);
@@ -237,20 +257,25 @@ impl VideoCapture {
             self.is_eof_sent = false;
         }
 
+        if target_frame == 0 {
+            self.last_decoded_frame_index = None;
+            return Ok(());
+        }
+
         loop {
             match self.read_raw_frame()? {
-                Some((frame_idx, _)) if frame_idx + 1 >= target_frame => {
-                    if frame_idx + 1 > target_frame {
-                        panic!(
-                            "{} has sought ahead from frame {} to frame {}...",
-                            self.path.clone(),
-                            target_frame - 1,
-                            frame_idx
-                        )
-                    }
-                    return Ok(());
+                Some((frame_idx, _)) if frame_idx + 1 > target_frame => {
+                    eprintln!(
+                        "{} has sought ahead from target frame {} to frame {}...",
+                        self.path.clone(),
+                        target_frame - 1,
+                        frame_idx
+                    );
+                    return Err(ffmpeg::Error::Bug);
                 }
+                Some((frame_idx, _)) if frame_idx + 1 == target_frame => return Ok(()),
                 Some(_) => {}
+                //may be worth figuring out how to store video duration for early returning if we hit this constantly
                 None => return Err(ffmpeg::Error::Eof),
             }
         }
