@@ -12,9 +12,9 @@ use mosaic_rs::{
 
 const TILE_BASE_RES: u64 = 64;
 const SOURCE: &str = "test/source.jpg";
-const TILES: &str = "test/vid_tiles/S1";
-const SOURCE_DSCALE: NonZero<u32> = NonZero::new(1).unwrap();
-const TILE_DEBUG_SIZE: u64 = 2;
+const TILES: &str = "test/vid_tiles/S2";
+const SOURCE_DSCALE: NonZero<u32> = NonZero::new(4).unwrap();
+const TILE_DEBUG_SIZE: u64 = 32;
 
 fn main() -> anyhow::Result<()> {
     ffmpeg::init()?;

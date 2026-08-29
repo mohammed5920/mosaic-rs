@@ -12,7 +12,6 @@ use crate::{
     },
 };
 
-//NOTE: this is single threaded because we parallelise the creation of many tiles instead
 pub fn calc_average_colour(pixels: &[[u8; 3]]) -> [u8; 3] {
     let mut sums = [0u64; 3];
     for pixel in pixels.iter() {
@@ -25,14 +24,6 @@ pub fn calc_average_colour(pixels: &[[u8; 3]]) -> [u8; 3] {
         (sums[1] / pixels.len() as u64) as u8,
         (sums[2] / pixels.len() as u64) as u8,
     ]
-}
-
-///(x, y, width, height)
-pub fn get_crop_offsets(width: u32, height: u32) -> (u32, u32, u32, u32) {
-    let min_dim = width.min(height);
-    let crop_x_offset = (width - min_dim) / 2;
-    let crop_y_offset = (height - min_dim) / 2;
-    (crop_x_offset, crop_y_offset, min_dim, min_dim)
 }
 
 pub enum Tile {

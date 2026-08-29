@@ -6,7 +6,7 @@ use crate::tiles::Tile;
 
 pub struct Matchmaker {
     kiddie: ImmutableKdTree<u8, 3>,
-    //with capacity 16_777_216
+    ///with capacity 16_777_216
     colour_map: Vec<AtomicI32>,
 }
 
@@ -22,7 +22,6 @@ impl Matchmaker {
         }
     }
 
-    //NOTE: single threaded with the assumption that parallelism will be achieved by processing many video frames in parallel
     pub fn matchmake(&self, query: &[[u8; 3]]) -> Vec<i32> {
         query
             .iter()

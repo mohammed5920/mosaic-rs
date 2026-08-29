@@ -1,7 +1,7 @@
 use camino::Utf8PathBuf;
 use image::{DynamicImage, ImageReader, ImageResult, imageops::FilterType};
 
-use crate::tiles::{calc_average_colour, get_crop_offsets};
+use crate::tiles::calc_average_colour;
 
 pub struct PicTile {
     pub average_colour: [u8; 3],
@@ -25,7 +25,13 @@ impl PicTile {
             Ok((self.average_colour).to_vec())
         } else {
             let decoded = &self._cached_source;
-            let (x, y, w, h) = get_crop_offsets(decoded.width(), decoded.height());
+            let (x, y, w, h) = {
+                let (w, h) = (decoded.width(), decoded.height());
+                let min_dim = w.min(h);
+                let crop_x_offset = (w - min_dim) / 2;
+                let crop_y_offset = (h - min_dim) / 2;
+                (crop_x_offset, crop_y_offset, min_dim, min_dim)
+            };
             let cropped = decoded.crop_imm(x, y, w, h);
             Ok(cropped
                 .resize(res as u32, res as u32, FilterType::Triangle)

@@ -33,7 +33,11 @@ struct VidTilesCacheEntry {
 #[derive(bincode::Decode, bincode::Encode)]
 enum MaybeVidTilesCacheEntry {
     CachedEntry(VidTilesCacheEntry),
-    UncacheableEntry { from_path: String, reason: String },
+    ///invalid entry = the video itself cannot be used for vidtiles (vfr, corrupt, etc), don't waste time trying to reparse it every time
+    UncacheableEntry {
+        from_path: String,
+        reason: String,
+    },
 }
 //
 // serialisation
@@ -135,13 +139,13 @@ fn evaluate_vidtile_cache(
     CacheEvaluationResult::Valid {
         tiles: true_indices
             .into_iter()
-            .map(|(first, last)| VidTile {
-                average_colour: cached.colours[first],
+            .map(|(start, end)| VidTile {
+                average_colour: cached.colours[start],
                 source_path: source_path.clone(),
-                start_frame_index: first as u32,
-                end_frame_index: last as u32,
+                start_frame_index: start as u32,
+                end_frame_index: end as u32,
                 first_frame: mapped_cached_previews
-                    .remove(&(first as u32))
+                    .remove(&(start as u32))
                     .expect("Index math should be correct"),
             })
             .collect(),
@@ -159,17 +163,21 @@ fn extract_vidtile_previews(
     fresh_preview_frame_indices: &FxHashMap<usize, usize>,
     tile_base_res: u64,
 ) -> anyhow::Result<Vec<VidTilePreview>> {
+    let mut res = Vec::new();
     let mut cap = VideoCapture::open(source_path.clone(), Some(tile_base_res))
         .with_context(|| format!("{source_path} - (update pass) cannot open capture"))?;
-    let mut res = Vec::new();
+
     for i in fresh_preview_frame_indices.keys() {
         let i = *i;
+
         cap.seek_to_frame(i as i64)
             .with_context(|| format!("{source_path} - (update pass) cannot seek capture"))?;
+
         let frame = cap
             .read_frame()
             .with_context(|| format!("{source_path} - (update pass) cannot read from capture"))?
             .with_context(|| format!("{source_path} - (update pass) capture ended prematurely"))?;
+
         res.push(VidTilePreview {
             from_frame_index: i as u32,
             width: frame.width,
@@ -177,6 +185,7 @@ fn extract_vidtile_previews(
             pixels: frame.pixels,
         });
     }
+
     Ok(res)
 }
 
@@ -184,39 +193,25 @@ fn process_video_for_vidtiles(
     source_path: &Utf8PathBuf,
     tile_base_res: u64,
 ) -> (MaybeVidTilesCacheEntry, Option<FxHashMap<usize, usize>>) {
+    let uncacheable = |reason| -> _ {
+        (
+            MaybeVidTilesCacheEntry::UncacheableEntry {
+                from_path: source_path.to_string(),
+                reason,
+            },
+            None,
+        )
+    };
+
     match is_fixed_frame_rate(source_path) {
+        Ok(false) => return uncacheable("Video is variable refresh-rate".to_owned()),
+        Err(e) => return uncacheable(format!("Could not probe video because {e}")),
         Ok(true) => {}
-        Ok(false) => {
-            return (
-                MaybeVidTilesCacheEntry::UncacheableEntry {
-                    from_path: source_path.to_string(),
-                    reason: "Video is variable refresh-rate".to_owned(),
-                },
-                None,
-            );
-        }
-        Err(e) => {
-            return (
-                MaybeVidTilesCacheEntry::UncacheableEntry {
-                    from_path: source_path.to_string(),
-                    reason: format!("Could not probe video because {e}"),
-                },
-                None,
-            );
-        }
     }
 
     let mut cap = match VideoCapture::open(source_path.clone(), Some(tile_base_res)) {
         Ok(cap) => cap,
-        Err(e) => {
-            return (
-                MaybeVidTilesCacheEntry::UncacheableEntry {
-                    from_path: source_path.to_string(),
-                    reason: format!("{e} while opening as capture"),
-                },
-                None,
-            );
-        }
+        Err(e) => return uncacheable(format!("{e} while opening as capture")),
     };
 
     let mut tile_previews = Vec::new();
@@ -225,17 +220,9 @@ fn process_video_for_vidtiles(
 
     loop {
         let curr_frame = match cap.read_frame() {
-            Err(e) => {
-                return (
-                    MaybeVidTilesCacheEntry::UncacheableEntry {
-                        from_path: source_path.to_string(),
-                        reason: format!("{e} while streaming capture"),
-                    },
-                    None,
-                );
-            }
-            Ok(None) => break,
             Ok(Some(f)) => f,
+            Ok(None) => break,
+            Err(e) => return uncacheable(format!("{e} while streaming capture")),
         };
 
         let curr_colour = calc_average_colour(&curr_frame.pixels);
@@ -263,10 +250,12 @@ fn process_video_for_vidtiles(
             )
         })
         .collect();
+
     if let Some(last) = tile_previews.last() {
         res2.insert(last.from_frame_index as usize, colours.len() - 1);
     }
-    let res1: MaybeVidTilesCacheEntry = MaybeVidTilesCacheEntry::CachedEntry(VidTilesCacheEntry {
+
+    let res1 = MaybeVidTilesCacheEntry::CachedEntry(VidTilesCacheEntry {
         from_path: source_path.to_string(),
         colours,
         tile_previews,
@@ -292,23 +281,27 @@ impl VidTile {
             return self.average_colour.to_vec();
         }
         let samples = image::FlatSamples {
-            samples: self.first_frame.pixels.as_flattened(), 
+            samples: self.first_frame.pixels.as_flattened(),
             layout: image::flat::SampleLayout {
-                channels: 3,     
+                channels: 3,
                 channel_stride: 1,
                 width: self.first_frame.width as u32,
                 height: self.first_frame.height as u32,
-                width_stride: 3,    
+                width_stride: 3,
                 height_stride: (self.first_frame.height * 3) as usize,
             },
             color_hint: None,
         };
-        let view = samples.as_view::<image::Rgb<u8>>().expect("Layout mismatch");
+        let view = samples
+            .as_view::<image::Rgb<u8>>()
+            .expect("Samples should be RGB pixels");
         image::imageops::resize(
-            &view, 
-            res as u32, res as u32, 
-            image::imageops::FilterType::Triangle
-        ).to_vec()
+            &view,
+            res as u32,
+            res as u32,
+            image::imageops::FilterType::Triangle,
+        )
+        .into_vec()
     }
 }
 
