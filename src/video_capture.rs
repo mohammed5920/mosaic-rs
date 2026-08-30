@@ -8,7 +8,7 @@ use ffmpeg_next as ffmpeg;
 //depending on the gap between where the current frame is vs the target frame
 //how big is that gap? not easily discoverable, changes per video and sometimes while playing
 //so this is a best effort guess
-const HARD_SEEK_THRESHOLD_SECONDS: i64 = 2;
+const HARD_SEEK_THRESHOLD_SECONDS: i64 = 4;
 
 pub struct VideoCaptureFrame {
     pub width: u64,
@@ -238,7 +238,8 @@ impl VideoCapture {
     pub fn seek_to_frame(&mut self, target_frame: i64) -> Result<(), ffmpeg::Error> {
         if self
             .last_decoded_frame_index
-            .is_some_and(|i| target_frame == i)
+            .is_some_and(|i| target_frame == i + 1)
+            || self.last_decoded_frame_index.is_none() && target_frame == 0
         {
             return Ok(());
         }

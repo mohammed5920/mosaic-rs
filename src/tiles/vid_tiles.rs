@@ -1,6 +1,5 @@
 use {
     crate::{is_fixed_frame_rate, tiles::calc_average_colour, video_capture::VideoCapture},
-    anyhow::Context,
     camino::Utf8PathBuf,
     imohash::Hasher as ImoHasher,
     rustc_hash::{FxBuildHasher, FxHashMap},
@@ -10,24 +9,11 @@ use {
 const CACHE_DIR: &str = "cache/tiles/";
 const DIFFERENCE_THRESHOLD: u32 = 300;
 
-//
-// serialisation
-//
-#[derive(bincode::Decode, bincode::Encode)]
-pub struct VidTilePreview {
-    //which frame in the original video is this tile from?
-    pub from_frame_index: u32,
-    pub width: u64,
-    pub height: u64,
-    pub pixels: Vec<[u8; 3]>,
-}
-
 #[derive(bincode::Decode, bincode::Encode)]
 struct VidTilesCacheEntry {
     //used just for debugging, not as source of truth for anything
     from_path: String,
     colours: Vec<[u8; 3]>, //avg color of every frame in the video
-    tile_previews: Vec<VidTilePreview>,
 }
 
 #[derive(bincode::Decode, bincode::Encode)]
@@ -39,9 +25,24 @@ enum MaybeVidTilesCacheEntry {
         reason: String,
     },
 }
-//
-// serialisation
-//
+
+enum CacheEvaluationResult {
+    MissingOrCorrupt,
+    ///invalid entry = the video itself cannot be used for vidtiles (vfr, corrupt, etc), don't waste time trying to reparse it every time
+    Unreadable {
+        reason: String,
+    },
+    Valid {
+        tiles: Vec<VidTile>,
+    },
+}
+
+pub struct VidTile {
+    pub average_colour: [u8; 3],
+    pub source_path: Utf8PathBuf,
+    pub start_frame_index: u32,
+    pub end_frame_index: u32,
+}
 
 //
 // util
@@ -77,25 +78,6 @@ fn get_start_end_frame_indices(colours: &[[u8; 3]]) -> FxHashMap<usize, usize> {
 // util
 //
 
-//
-// cache check
-//
-enum CacheEvaluationResult {
-    MissingOrCorrupt,
-    ///invalid entry = the video itself cannot be used for vidtiles (vfr, corrupt, etc), don't waste time trying to reparse it every time
-    Unreadable {
-        reason: String,
-    },
-    //pass colours so they're cached with the fresh frames
-    Stale {
-        colors: Vec<[u8; 3]>,
-        fresh_preview_frame_indices: FxHashMap<usize, usize>,
-    },
-    Valid {
-        tiles: Vec<VidTile>,
-    },
-}
-
 fn evaluate_vidtile_cache(
     source_path: &Utf8PathBuf,
     cache_path: &Utf8PathBuf,
@@ -111,96 +93,36 @@ fn evaluate_vidtile_cache(
         eprintln!("cache entry for {source_path} is corrupt, reprocessing...");
         return CacheEvaluationResult::MissingOrCorrupt;
     };
-    let cached = match decoded {
-        MaybeVidTilesCacheEntry::CachedEntry(cached) => cached,
+    match decoded {
+        MaybeVidTilesCacheEntry::CachedEntry(cached) => CacheEvaluationResult::Valid {
+            tiles: get_start_end_frame_indices(&cached.colours)
+                .into_iter()
+                .map(|(start, end)| VidTile {
+                    average_colour: cached.colours[start],
+                    source_path: source_path.clone(),
+                    start_frame_index: start as u32,
+                    end_frame_index: end as u32,
+                })
+                .collect(),
+        },
         MaybeVidTilesCacheEntry::UncacheableEntry {
             reason,
             from_path: _,
         } => {
-            return CacheEvaluationResult::Unreadable { reason };
-        }
-    };
-
-    //stale preview check
-    let mut mapped_cached_previews: FxHashMap<_, _> = cached
-        .tile_previews
-        .into_iter()
-        .map(|t| (t.from_frame_index, t))
-        .collect();
-    let true_indices = get_start_end_frame_indices(&cached.colours);
-    for start in true_indices.keys() {
-        if !mapped_cached_previews.contains_key(&(*start as u32)) {
-            return CacheEvaluationResult::Stale {
-                colors: cached.colours,
-                fresh_preview_frame_indices: true_indices,
-            };
+            CacheEvaluationResult::Unreadable { reason }
         }
     }
-    CacheEvaluationResult::Valid {
-        tiles: true_indices
-            .into_iter()
-            .map(|(start, end)| VidTile {
-                average_colour: cached.colours[start],
-                source_path: source_path.clone(),
-                start_frame_index: start as u32,
-                end_frame_index: end as u32,
-                first_frame: mapped_cached_previews
-                    .remove(&(start as u32))
-                    .expect("Index math should be correct"),
-            })
-            .collect(),
-    }
-}
-//
-// cache check
-//
-
-//
-// video processing
-//
-fn extract_vidtile_previews(
-    source_path: &Utf8PathBuf,
-    fresh_preview_frame_indices: &FxHashMap<usize, usize>,
-    tile_base_res: u64,
-) -> anyhow::Result<Vec<VidTilePreview>> {
-    let mut res = Vec::new();
-    let mut cap = VideoCapture::open(source_path.clone(), Some(tile_base_res))
-        .with_context(|| format!("{source_path} - (update pass) cannot open capture"))?;
-
-    for i in fresh_preview_frame_indices.keys() {
-        let i = *i;
-
-        cap.seek_to_frame(i as i64)
-            .with_context(|| format!("{source_path} - (update pass) cannot seek capture"))?;
-
-        let frame = cap
-            .read_frame()
-            .with_context(|| format!("{source_path} - (update pass) cannot read from capture"))?
-            .with_context(|| format!("{source_path} - (update pass) capture ended prematurely"))?;
-
-        res.push(VidTilePreview {
-            from_frame_index: i as u32,
-            width: frame.width,
-            height: frame.height,
-            pixels: frame.pixels,
-        });
-    }
-
-    Ok(res)
 }
 
 fn process_video_for_vidtiles(
     source_path: &Utf8PathBuf,
     tile_base_res: u64,
-) -> (MaybeVidTilesCacheEntry, Option<FxHashMap<usize, usize>>) {
+) -> MaybeVidTilesCacheEntry {
     let uncacheable = |reason| -> _ {
-        (
-            MaybeVidTilesCacheEntry::UncacheableEntry {
-                from_path: source_path.to_string(),
-                reason,
-            },
-            None,
-        )
+        MaybeVidTilesCacheEntry::UncacheableEntry {
+            from_path: source_path.to_string(),
+            reason,
+        }
     };
 
     match is_fixed_frame_rate(source_path) {
@@ -214,10 +136,7 @@ fn process_video_for_vidtiles(
         Err(e) => return uncacheable(format!("{e} while opening as capture")),
     };
 
-    let mut tile_previews = Vec::new();
     let mut colours = Vec::new();
-    let mut last_tile_avg_colour = [0; 3];
-
     loop {
         let curr_frame = match cap.read_frame() {
             Ok(Some(f)) => f,
@@ -227,82 +146,12 @@ fn process_video_for_vidtiles(
 
         let curr_colour = calc_average_colour(&curr_frame.pixels);
         colours.push(curr_colour);
-
-        if tile_previews.is_empty()
-            || mse(&last_tile_avg_colour, &curr_colour) >= DIFFERENCE_THRESHOLD
-        {
-            tile_previews.push(VidTilePreview {
-                from_frame_index: curr_frame.frame_index as u32,
-                width: curr_frame.width,
-                height: curr_frame.height,
-                pixels: curr_frame.pixels,
-            });
-            last_tile_avg_colour = curr_colour;
-        }
     }
 
-    let mut res2: FxHashMap<usize, usize> = tile_previews
-        .windows(2)
-        .map(|w| {
-            (
-                w[0].from_frame_index as usize,
-                w[1].from_frame_index as usize - 1,
-            )
-        })
-        .collect();
-
-    if let Some(last) = tile_previews.last() {
-        res2.insert(last.from_frame_index as usize, colours.len() - 1);
-    }
-
-    let res1 = MaybeVidTilesCacheEntry::CachedEntry(VidTilesCacheEntry {
+    MaybeVidTilesCacheEntry::CachedEntry(VidTilesCacheEntry {
         from_path: source_path.to_string(),
         colours,
-        tile_previews,
-    });
-
-    (res1, Some(res2))
-}
-//
-// video processing
-//
-
-pub struct VidTile {
-    pub average_colour: [u8; 3],
-    pub source_path: Utf8PathBuf,
-    pub start_frame_index: u32,
-    pub end_frame_index: u32,
-    pub first_frame: VidTilePreview,
-}
-
-impl VidTile {
-    pub fn first_frame_as_res(&self, res: u64) -> Vec<u8> {
-        if res == 1 {
-            return self.average_colour.to_vec();
-        }
-        let samples = image::FlatSamples {
-            samples: self.first_frame.pixels.as_flattened(),
-            layout: image::flat::SampleLayout {
-                channels: 3,
-                channel_stride: 1,
-                width: self.first_frame.width as u32,
-                height: self.first_frame.height as u32,
-                width_stride: 3,
-                height_stride: (self.first_frame.height * 3) as usize,
-            },
-            color_hint: None,
-        };
-        let view = samples
-            .as_view::<image::Rgb<u8>>()
-            .expect("Samples should be RGB pixels");
-        image::imageops::resize(
-            &view,
-            res as u32,
-            res as u32,
-            image::imageops::FilterType::Triangle,
-        )
-        .into_vec()
-    }
+    })
 }
 
 pub fn vid_tiles_from_path(
@@ -320,54 +169,24 @@ pub fn vid_tiles_from_path(
         CacheEvaluationResult::MissingOrCorrupt => {
             process_video_for_vidtiles(&source_path, tile_base_res)
         }
-        CacheEvaluationResult::Stale {
-            colors,
-            fresh_preview_frame_indices,
-        } => {
-            let previews = extract_vidtile_previews(
-                &source_path,
-                &fresh_preview_frame_indices,
-                tile_base_res,
-            )?;
-            (
-                MaybeVidTilesCacheEntry::CachedEntry(VidTilesCacheEntry {
-                    from_path: source_path.to_string(),
-                    colours: colors,
-                    tile_previews: previews,
-                }),
-                Some(fresh_preview_frame_indices),
-            )
-        }
     };
 
-    let encoded = bincode::encode_to_vec(&res.0, bincode::config::standard())
+    let encoded = bincode::encode_to_vec(&res, bincode::config::standard())
         .expect("Cache should be encoded to vec");
     fs::write(&cache_path, encoded)?;
 
     match res {
-        (MaybeVidTilesCacheEntry::CachedEntry(vid_tiles_cache_entry), Some(frame_index_map)) => {
-            Ok(vid_tiles_cache_entry
-                .tile_previews
+        MaybeVidTilesCacheEntry::UncacheableEntry { reason, .. } => anyhow::bail!(reason),
+        MaybeVidTilesCacheEntry::CachedEntry(entry) => {
+            Ok(get_start_end_frame_indices(&entry.colours)
                 .into_iter()
-                .map(|t| VidTile {
-                    average_colour: vid_tiles_cache_entry.colours[t.from_frame_index as usize],
+                .map(|(start, end)| VidTile {
+                    average_colour: entry.colours[start],
                     source_path: source_path.clone(),
-                    start_frame_index: t.from_frame_index,
-                    end_frame_index: (*frame_index_map
-                        .get(&(t.from_frame_index as usize))
-                        .expect("Index math should be correct"))
-                        as u32,
-                    first_frame: t,
+                    start_frame_index: start as u32,
+                    end_frame_index: end as u32,
                 })
                 .collect())
         }
-        (
-            MaybeVidTilesCacheEntry::UncacheableEntry {
-                from_path: _,
-                reason,
-            },
-            _,
-        ) => anyhow::bail!(reason),
-        (MaybeVidTilesCacheEntry::CachedEntry(_), None) => unreachable!(),
     }
 }

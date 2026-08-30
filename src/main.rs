@@ -5,16 +5,12 @@ use std::{num::NonZero, str::FromStr};
 use anyhow::bail;
 use camino::Utf8PathBuf;
 use ffmpeg_next as ffmpeg;
-use mosaic_rs::{
-    benchmark, matchmaker::Matchmaker, rendering::to_file::save_to_file, source::Source,
-    tiles::load_tiles, video_capture::VideoCapture,
-};
+use mosaic_rs::{benchmark, matchmaker::Matchmaker, source::Source, tiles::load_tiles};
 
 const TILE_BASE_RES: u64 = 64;
 const SOURCE: &str = "test/source.jpg";
-const TILES: &str = "test/vid_tiles/S2";
-const SOURCE_DSCALE: NonZero<u32> = NonZero::new(4).unwrap();
-const TILE_DEBUG_SIZE: u64 = 32;
+const TILES: &str = "test/vid_tiles/S1";
+const SOURCE_DSCALE: NonZero<u32> = NonZero::new(1).unwrap();
 
 fn main() -> anyhow::Result<()> {
     ffmpeg::init()?;
@@ -31,15 +27,6 @@ fn main() -> anyhow::Result<()> {
     let made_matches = benchmark("making matches", || {
         matchmaker.matchmake(pic_source.as_pixels())
     });
-    benchmark("rendering test image", || {
-        save_to_file(
-            &pic_source,
-            &tiles,
-            TILE_DEBUG_SIZE,
-            &made_matches,
-            "test/result.jpg",
-        )
-    })?;
 
     // let mut cap = benchmark("opening vidcap", || {
     //     VideoCapture::open("test/source.mkv".into(), Some(64))
