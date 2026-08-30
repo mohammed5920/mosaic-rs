@@ -1154,6 +1154,7 @@ version = "2.0.0"
 dependencies = [
  "anyhow",
  "bincode",
+ "bytemuck",
  "camino",
  "ffmpeg-next",
  "ffprobe",

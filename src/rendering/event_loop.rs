@@ -8,7 +8,7 @@ use winit::{
     window::{Window, WindowId},
 };
 
-use crate::{benchmark, rendering::gpu::GpuState};
+use crate::{benchmark, rendering::gpu::core::GpuState};
 
 #[derive(Default)]
 struct MosaicWindow {
@@ -30,16 +30,6 @@ impl ApplicationHandler for MosaicWindow {
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
-            //NOTE: keyboard handler
-            WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        physical_key: PhysicalKey::Code(code),
-                        ..
-                    },
-                ..
-            } => {}
-
             //NOTE: resize handler
             WindowEvent::Resized(size) => {
                 benchmark("resizing", || {
@@ -49,6 +39,16 @@ impl ApplicationHandler for MosaicWindow {
                         .resize(size)
                 });
             }
+
+            //NOTE: keyboard handler
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(code),
+                        ..
+                    },
+                ..
+            } => {}
 
             //NOTE: Renderer
             WindowEvent::RedrawRequested => {

@@ -12,17 +12,38 @@ strip = true
 debug = true
 
 [dependencies]
+##rust stuff
+#error handling
 anyhow = { version = "1.0.104", default-features = false }
-bincode = { version = "=2", default-features = false, features=["std", "derive"] }
+#utf8 path methods
 camino = { version = "1.2.5", default-features = false, features=["serde1"] }
-ffmpeg-next = { version = "9.0.0", default-features = false, features=["codec", "format", "filter", "software-scaling"] }
-ffprobe = { version = "0.4.0", default-features = false }
-image = { version = "0.25.10", default-features = false, features=["bmp", "gif", "ico", "jpeg", "png", "rayon", "webp"] }
-imohash = { version = "0.1.2", default-features = false }
-kiddo = { version = "6.0.2", default-features = false }
+#faster sync primitives
 parking_lot = { version = "0.12.5", default-features = false, features = ["hardware-lock-elision"] }
-pollster = { version = "1.0.1", default-features = false }
+#easy parallelisation
 rayon = { version = "1.12.0", default-features = false }
+#faster sets and hashmaps
 rustc-hash = { version = "2.1.3", default-features = false, features=["std"] }
+
+##media stuff
+#serialising video cache files
+bincode = { version = "=2", default-features = false, features=["std", "derive"] }
+#reading videos
+ffmpeg-next = { version = "9.0.0", default-features = false, features=["codec", "format", "filter", "software-scaling"] }
+#querying video CFR metadata
+ffprobe = { version = "0.4.0", default-features = false }
+#reading images
+image = { version = "0.25.10", default-features = false, features=["bmp", "gif", "ico", "jpeg", "png", "rayon", "webp"] }
+#constant time hashing of videos for caching
+imohash = { version = "0.1.2", default-features = false }
+#k-d tree for fast matching
+kiddo = { version = "6.0.2", default-features = false }
+
+##gpu stuff
+#writing wgpu buffers
+bytemuck = { version = "1.25.2", default-features = false }
+#for wgpu querying
+pollster = { version = "1.0.1", default-features = false }
+#harness the gpu
 wgpu = { version = "30.0.1", default-features = false, features=["std", "wgpu-core", "vulkan", "wgsl", "parking_lot", "parking_lot"] }
+#windowing wrapper
 winit = { version = "0.30.13", default-features = false, features = ["rwh_06"] }
