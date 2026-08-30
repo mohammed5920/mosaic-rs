@@ -108,9 +108,7 @@ fn evaluate_vidtile_cache(
         MaybeVidTilesCacheEntry::UncacheableEntry {
             reason,
             from_path: _,
-        } => {
-            CacheEvaluationResult::Unreadable { reason }
-        }
+        } => CacheEvaluationResult::Unreadable { reason },
     }
 }
 

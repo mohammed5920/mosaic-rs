@@ -5,7 +5,10 @@ use std::{num::NonZero, str::FromStr};
 use anyhow::bail;
 use camino::Utf8PathBuf;
 use ffmpeg_next as ffmpeg;
-use mosaic_rs::{benchmark, matchmaker::Matchmaker, source::Source, tiles::load_tiles};
+use mosaic_rs::{
+    benchmark, matchmaker::Matchmaker, rendering::event_loop::start_mosaic_loop, source::Source,
+    tiles::load_tiles,
+};
 
 const TILE_BASE_RES: u64 = 64;
 const SOURCE: &str = "test/source.jpg";
@@ -28,36 +31,5 @@ fn main() -> anyhow::Result<()> {
         matchmaker.matchmake(pic_source.as_pixels())
     });
 
-    // let mut cap = benchmark("opening vidcap", || {
-    //     VideoCapture::open("test/source.mkv".into(), Some(64))
-    // })?;
-
-    // for i in 0..10 {
-    //     let frame = benchmark(&format!("saving frame {i}"), || cap.read_frame())?
-    //         .unwrap_or_else(|| panic!("frame {i} was None"));
-    //     image::save_buffer(
-    //         format!("test/cap_rs/{i}.jpg"),
-    //         frame.pixels.as_flattened(),
-    //         frame.width as u32,
-    //         frame.height as u32,
-    //         image::ColorType::Rgb8,
-    //     )?;
-    // }
-
-    // benchmark("seeking", || cap.seek_to_frame(86431))?;
-
-    // for i in 86431..86531 {
-    //     let frame = benchmark(&format!("saving frame {i}"), || cap.read_frame())?
-    //         .unwrap_or_else(|| panic!("frame {i} was None"));
-    //     assert!(i == frame.frame_index);
-    //     image::save_buffer(
-    //         format!("test/cap_rs/{i}.jpg"),
-    //         frame.pixels.as_flattened(),
-    //         frame.width as u32,
-    //         frame.height as u32,
-    //         image::ColorType::Rgb8,
-    //     )?;
-    // }
-
-    Ok(())
+    start_mosaic_loop()
 }

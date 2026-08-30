@@ -8,8 +8,8 @@ use crate::{
     source::pic_source::PicSource,
 };
 
-pub mod pic_source;
-pub mod vid_source;
+mod pic_source;
+mod vid_source;
 
 pub enum Source {
     Pic(PicSource),
