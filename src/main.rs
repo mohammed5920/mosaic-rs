@@ -6,8 +6,8 @@ use anyhow::bail;
 use camino::Utf8PathBuf;
 use ffmpeg_next as ffmpeg;
 use mosaic_rs::{
-    benchmark, matchmaker::Matchmaker, renderer::event_loop::start_mosaic_loop, media_source::Source,
-    tiles::load_tiles,
+    benchmark, matchmaker::Matchmaker, media_source::Source,
+    renderer::event_loop::start_mosaic_loop, tiles::load_tiles,
 };
 
 const TILE_BASE_RES: u64 = 64;

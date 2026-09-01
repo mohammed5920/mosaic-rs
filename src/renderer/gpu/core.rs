@@ -12,7 +12,7 @@ pub struct GpuState {
     ///stored config for the surface, since you cannot read it from the surface directly (?)
     surface_config: wgpu::SurfaceConfiguration,
     ///pipeline for the main mosaic shaders
-    pipeline: wgpu::RenderPipeline
+    pipeline: wgpu::RenderPipeline,
 }
 
 impl GpuState {
@@ -62,12 +62,20 @@ impl GpuState {
 
         let vertex_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("saic_Vertex Shader"),
-            source: wgpu::ShaderSource::Wgsl(fs::read_to_string("src/renderer/gpu/_vertex.wgsl").expect("Cannot read vertex shader").into()),
+            source: wgpu::ShaderSource::Wgsl(
+                fs::read_to_string("src/renderer/gpu/_vertex.wgsl")
+                    .expect("Cannot read vertex shader")
+                    .into(),
+            ),
         });
 
         let fragment_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("saic_Fragment Shader"),
-            source: wgpu::ShaderSource::Wgsl(fs::read_to_string("src/renderer/gpu/_fragment.wgsl").expect("Cannot read vertex shader").into()),
+            source: wgpu::ShaderSource::Wgsl(
+                fs::read_to_string("src/renderer/gpu/_fragment.wgsl")
+                    .expect("Cannot read vertex shader")
+                    .into(),
+            ),
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -116,7 +124,7 @@ impl GpuState {
             device,
             queue,
             surface_config: config,
-            pipeline
+            pipeline,
         }
     }
 
@@ -166,7 +174,7 @@ impl GpuState {
                 occlusion_query_set: None,
             });
             pass.set_pipeline(&self.pipeline);
-            // render_pass.set_bind_group(0, &render_config.mosaic_bind_group, &[]);
+            // pass.set_bind_group(0, &render_config.mosaic_bind_group, &[]);
             pass.draw(0..4, 0..1);
         }
         self.queue.submit(Some(encoder.finish()));

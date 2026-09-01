@@ -47,7 +47,7 @@ pub struct VidTile {
 //
 // util
 //
-fn mse(a: &[u8; 3], b: &[u8; 3]) -> u32 {
+fn mse(a: [u8; 3], b: [u8; 3]) -> u32 {
     let (ar, ag, ab) = (a[0] as i32, a[1] as i32, a[2] as i32);
     let (br, bg, bb) = (b[0] as i32, b[1] as i32, b[2] as i32);
     let (cr, cg, cb) = ((ar - br), (ag - bg), (ab - bb));
@@ -64,7 +64,7 @@ fn get_start_end_frame_indices(colours: &[[u8; 3]]) -> FxHashMap<usize, usize> {
     let mut last_start_colour = colours[0];
     for (offset, current_colour) in colours[1..].iter().enumerate() {
         let i = offset + 1;
-        if mse(&last_start_colour, current_colour) >= DIFFERENCE_THRESHOLD {
+        if mse(last_start_colour, *current_colour) >= DIFFERENCE_THRESHOLD {
             res.insert(last_start_index, i - 1);
             last_start_index = i;
             last_start_colour = *current_colour;
@@ -136,13 +136,13 @@ fn process_video_for_vidtiles(
 
     let mut colours = Vec::new();
     loop {
-        let curr_frame = match cap.read_frame() {
+        let curr_frame = match cap.read_rgb_frame() {
             Ok(Some(f)) => f,
             Ok(None) => break,
             Err(e) => return uncacheable(format!("{e} while streaming capture")),
         };
 
-        let curr_colour = calc_average_colour(&curr_frame.pixels);
+        let curr_colour = calc_average_colour(&curr_frame.rgb);
         colours.push(curr_colour);
     }
 

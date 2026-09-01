@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use camino::Utf8PathBuf;
 use ffmpeg_next as ffmpeg;
 
@@ -10,25 +8,10 @@ use ffmpeg_next as ffmpeg;
 //so this is a best effort guess
 const HARD_SEEK_THRESHOLD_SECONDS: i64 = 4;
 
-pub struct VideoCaptureFrame {
-    pub width: u64,
-    pub height: u64,
-    pub pixels: Vec<[u8; 3]>,
-    pub frame_index: i64,
-}
-
-impl VideoCaptureFrame {
-    pub fn save_to_file(&self, path: impl AsRef<Path>) -> Result<(), image::ImageError> {
-        image::save_buffer(
-            path,
-            self.pixels.as_flattened(),
-            self.width as u32,
-            self.height as u32,
-            image::ColorType::Rgb8,
-        )
-    }
-}
-
+//
+//util
+//
+///returns None on division by zero (invalid rational bases)
 pub fn frame_idx_from_pts(
     stream_time_base: ffmpeg::Rational,
     stream_frame_rate: ffmpeg::Rational,
@@ -55,6 +38,45 @@ pub fn frame_idx_from_pts(
     Some(frame_index_exact.round() as i64)
 }
 
+///take a full size video frame plane, crop out the extra padding and make it match out_w * out_h * bpp exactly
+fn extract_plane(
+    data: &[u8],
+    stride: u64,
+    x_start: u64,
+    y_start: u64,
+    out_w: u64,
+    out_h: u64,
+    bpp: u64,
+) -> Vec<u8> {
+    let mut out = vec![0u8; (out_w * out_h * bpp) as usize];
+    for row in 0..out_h {
+        let src_row = y_start + row;
+        let row_byte_start = (src_row * stride + x_start * bpp) as usize;
+        let row_len = (out_w * bpp) as usize;
+        out[(row * out_w * bpp) as usize..][..row_len]
+            .copy_from_slice(&data[row_byte_start..row_byte_start + row_len]);
+    }
+    out
+}
+//
+//util
+//
+
+pub struct NvVideoFrame {
+    pub width: u64,
+    pub height: u64,
+    pub frame_index: i64,
+    pub y: Vec<u8>,
+    pub cb_cr: Vec<u8>,
+}
+
+pub struct RgbVideoFrame {
+    pub width: u64,
+    pub height: u64,
+    pub frame_index: i64,
+    pub rgb: Vec<u8>,
+}
+
 pub struct VideoCapture {
     best_video_stream_index: usize,
     stream_time_base: ffmpeg::Rational,
@@ -68,7 +90,8 @@ pub struct VideoCapture {
     path: Utf8PathBuf,
     input: ffmpeg::format::context::Input,
     decoder: ffmpeg::decoder::Video,
-    scaler: ffmpeg::software::scaling::Context,
+    rgb_scaler: ffmpeg::software::scaling::Context,
+    nv_scaler: ffmpeg::software::scaling::Context,
 }
 
 impl VideoCapture {
@@ -107,11 +130,21 @@ impl VideoCapture {
             })
             .unwrap_or((in_width, in_height));
 
-        let scaler = ffmpeg::software::scaling::Context::get(
+        let rgb_scaler = ffmpeg::software::scaling::Context::get(
             in_format,
             in_width,
             in_height,
             ffmpeg::format::Pixel::RGB24,
+            out_w,
+            out_h,
+            ffmpeg::software::scaling::Flags::FAST_BILINEAR,
+        )?;
+
+        let nv_scaler = ffmpeg::software::scaling::Context::get(
+            in_format,
+            in_width,
+            in_height,
+            ffmpeg::format::Pixel::NV12,
             out_w,
             out_h,
             ffmpeg::software::scaling::Flags::FAST_BILINEAR,
@@ -130,7 +163,8 @@ impl VideoCapture {
             path,
             input,
             decoder,
-            scaler,
+            rgb_scaler,
+            nv_scaler,
         })
     }
 
@@ -189,51 +223,6 @@ impl VideoCapture {
         Ok(Some((frame_idx, raw_frame)))
     }
 
-    pub fn read_frame(&mut self) -> Result<Option<VideoCaptureFrame>, ffmpeg::Error> {
-        let (frame_idx, raw_frame) = match self.read_raw_frame() {
-            Ok(None) => return Ok(None),
-            Err(e) => return Err(e),
-            Ok(Some(raw_frame)) => raw_frame,
-        };
-        let mut rgb_frame = ffmpeg::frame::Video::empty();
-        self.scaler.run(&raw_frame, &mut rgb_frame)?;
-
-        //stride = width + alignment padding
-        let stride = rgb_frame.stride(0) as u64;
-        let data = rgb_frame.data(0);
-        let frame_width = rgb_frame.width() as u64;
-        let frame_height = rgb_frame.height() as u64;
-
-        let (out_width, out_height, x_start, y_start) = match self.cropped_square_size {
-            Some(size) => {
-                let size = size.min(frame_width).min(frame_height);
-                let x_start = (frame_width - size) / 2;
-                let y_start = (frame_height - size) / 2;
-                (size, size, x_start, y_start)
-            }
-            None => (frame_width, frame_height, 0, 0),
-        };
-
-        let mut pixels = vec![[0u8; 3]; (out_width * out_height) as usize];
-
-        for row in 0..out_height {
-            let src_row = y_start + row;
-            let row_byte_start = (src_row * stride + x_start * 3) as usize;
-            let row_bytes = &data[row_byte_start..row_byte_start + (out_width * 3) as usize];
-
-            for (col, chunk) in row_bytes.as_chunks::<3>().0.iter().enumerate() {
-                pixels[(row * out_width) as usize + col] = [chunk[0], chunk[1], chunk[2]];
-            }
-        }
-
-        Ok(Some(VideoCaptureFrame {
-            width: out_width,
-            height: out_height,
-            pixels,
-            frame_index: frame_idx,
-        }))
-    }
-
     ///this will seek such that calling the next read_frame() gives you the n=target_frame frame
     pub fn seek_to_frame(&mut self, target_frame: i64) -> Result<(), ffmpeg::Error> {
         if self
@@ -280,5 +269,102 @@ impl VideoCapture {
                 None => return Err(ffmpeg::Error::Eof),
             }
         }
+    }
+
+    ///returns None if the video has ended
+    pub fn read_rgb_frame(&mut self) -> Result<Option<RgbVideoFrame>, ffmpeg::Error> {
+        let (frame_idx, raw_frame) = match self.read_raw_frame() {
+            Ok(None) => return Ok(None),
+            Err(e) => return Err(e),
+            Ok(Some(raw_frame)) => raw_frame,
+        };
+        let mut rgb_frame = ffmpeg::frame::Video::empty();
+        self.rgb_scaler.run(&raw_frame, &mut rgb_frame)?;
+
+        //stride = width + alignment padding
+        let stride = rgb_frame.stride(0) as u64;
+        let data = rgb_frame.data(0);
+        let frame_width = rgb_frame.width() as u64;
+        let frame_height = rgb_frame.height() as u64;
+
+        let (out_width, out_height, x_start, y_start) = match self.cropped_square_size {
+            Some(size) => {
+                let size = size.min(frame_width).min(frame_height);
+                (
+                    size,
+                    size,
+                    (frame_width - size) / 2,
+                    (frame_height - size) / 2,
+                )
+            }
+            None => (frame_width, frame_height, 0, 0),
+        };
+
+        Ok(Some(RgbVideoFrame {
+            width: out_width,
+            height: out_height,
+            rgb: extract_plane(data, stride, x_start, y_start, out_width, out_height, 3),
+            frame_index: frame_idx,
+        }))
+    }
+
+    ///returns None if the video has ended
+    pub fn read_nv_frame(&mut self) -> Result<Option<NvVideoFrame>, ffmpeg::Error> {
+        let (frame_idx, raw_frame) = match self.read_raw_frame() {
+            Ok(None) => return Ok(None),
+            Err(e) => return Err(e),
+            Ok(Some(raw_frame)) => raw_frame,
+        };
+
+        let mut nv_frame = ffmpeg::frame::Video::empty();
+        self.nv_scaler.run(&raw_frame, &mut nv_frame)?;
+
+        let frame_width = nv_frame.width() as u64;
+        let frame_height = nv_frame.height() as u64;
+
+        let (out_width, out_height, x_start, y_start) = match self.cropped_square_size {
+            Some(size) => {
+                let size = size.min(frame_width).min(frame_height);
+                (
+                    size,
+                    size,
+                    (frame_width - size) / 2,
+                    (frame_height - size) / 2,
+                )
+            }
+            None => (frame_width, frame_height, 0, 0),
+        };
+
+        //luma plane: full resolution
+        let y_plane = extract_plane(
+            nv_frame.data(0),
+            nv_frame.stride(0) as u64,
+            x_start,
+            y_start,
+            out_width,
+            out_height,
+            1,
+        );
+
+        //chroma planes: half res, dimension rounded up for odd sizes
+        let (cw, ch) = (out_width.div_ceil(2), out_height.div_ceil(2));
+        let (cx, cy) = (x_start / 2, y_start / 2);
+        let cb_cr_plane = extract_plane(
+            nv_frame.data(1),
+            nv_frame.stride(1) as u64,
+            cx,
+            cy,
+            cw,
+            ch,
+            2,
+        );
+
+        Ok(Some(NvVideoFrame {
+            width: out_width,
+            height: out_height,
+            y: y_plane,
+            cb_cr: cb_cr_plane,
+            frame_index: frame_idx,
+        }))
     }
 }

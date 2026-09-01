@@ -12,7 +12,7 @@ impl PicTile {
     pub fn open(path: Utf8PathBuf) -> ImageResult<PicTile> {
         let decoded = ImageReader::open(&path)?.decode()?;
         Ok(PicTile {
-            average_colour: calc_average_colour(decoded.to_rgb8().into_raw().as_chunks::<3>().0),
+            average_colour: calc_average_colour(&decoded.to_rgb8().into_raw()),
             source_path: path,
         })
     }

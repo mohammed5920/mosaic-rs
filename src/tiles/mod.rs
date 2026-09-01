@@ -12,9 +12,10 @@ use crate::{
     },
 };
 
-pub fn calc_average_colour(pixels: &[[u8; 3]]) -> [u8; 3] {
+pub fn calc_average_colour(pixels: &[u8]) -> [u8; 3] {
+    debug_assert!(pixels.len()%3 == 0, "pixel array is not divisible by 3 (not valid RGB)");
     let mut sums = [0u64; 3];
-    for pixel in pixels.iter() {
+    for pixel in pixels.as_chunks::<3>().0.iter() {
         sums[0] += pixel[0] as u64;
         sums[1] += pixel[1] as u64;
         sums[2] += pixel[2] as u64;

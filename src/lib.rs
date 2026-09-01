@@ -1,7 +1,7 @@
 pub mod file_util;
 pub mod matchmaker;
-pub mod renderer;
 pub mod media_source;
+pub mod renderer;
 pub mod tiles;
 pub mod vidcap;
 
