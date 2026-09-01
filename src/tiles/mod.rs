@@ -5,7 +5,7 @@ use camino::Utf8PathBuf;
 use rayon::prelude::*;
 
 use crate::{
-    file_io::{MediaType, check_supported_extension, walk_dir},
+    file_util::{MediaType, check_supported_extension, walk_dir},
     tiles::{
         pic_tiles::PicTile,
         vid_tiles::{VidTile, vid_tiles_from_path},

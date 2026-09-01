@@ -1,5 +1,5 @@
 use {
-    crate::{is_fixed_frame_rate, tiles::calc_average_colour, video_capture::VideoCapture},
+    crate::{is_fixed_frame_rate, tiles::calc_average_colour, vidcap::VideoCapture},
     camino::Utf8PathBuf,
     imohash::Hasher as ImoHasher,
     rustc_hash::{FxBuildHasher, FxHashMap},

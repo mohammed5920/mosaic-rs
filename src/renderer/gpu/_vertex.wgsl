@@ -3,6 +3,8 @@ struct VertexOutput {
     @location(0) screen_uv: vec2<f32>,
 };
 
+//full screen rectangle
+
 @vertex
 fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> VertexOutput {
     var out: VertexOutput;

@@ -5,5 +5,5 @@ struct VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-  return vec4(1.);
+  return vec4(in.screen_uv.x, in.screen_uv.y, 1., 1.);
 }

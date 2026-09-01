@@ -6,7 +6,7 @@ use anyhow::bail;
 use camino::Utf8PathBuf;
 use ffmpeg_next as ffmpeg;
 use mosaic_rs::{
-    benchmark, matchmaker::Matchmaker, rendering::event_loop::start_mosaic_loop, source::Source,
+    benchmark, matchmaker::Matchmaker, renderer::event_loop::start_mosaic_loop, media_source::Source,
     tiles::load_tiles,
 };
 
@@ -27,7 +27,7 @@ fn main() -> anyhow::Result<()> {
         load_tiles(&Utf8PathBuf::from_str(TILES).unwrap(), TILE_BASE_RES)
     })?;
     let matchmaker = benchmark("generating match tree", || Matchmaker::from_tiles(&tiles));
-    let made_matches = benchmark("making matches", || {
+    let _made_matches = benchmark("making matches", || {
         matchmaker.matchmake(pic_source.as_pixels())
     });
 

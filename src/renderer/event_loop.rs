@@ -8,7 +8,7 @@ use winit::{
     window::{Window, WindowId},
 };
 
-use crate::{benchmark, rendering::gpu::core::GpuState};
+use crate::{benchmark, renderer::gpu::core::GpuState};
 
 #[derive(Default)]
 struct MosaicWindow {
@@ -19,20 +19,24 @@ struct MosaicWindow {
 impl ApplicationHandler for MosaicWindow {
     //NOTE: Initialiser
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let window = Arc::new(
-            event_loop
-                .create_window(Window::default_attributes())
-                .unwrap(),
-        );
+        let window = benchmark("creating window", || {
+            Arc::new(
+                event_loop
+                    .create_window(Window::default_attributes())
+                    .unwrap(),
+            )
+        });
         self.window = Some(window.clone());
-        self.gpu = Some(pollster::block_on(GpuState::new(window)));
+        self.gpu = Some(benchmark("initialising GPU", || {
+            pollster::block_on(GpuState::new(window.clone()))
+        }));
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
             //NOTE: resize handler
             WindowEvent::Resized(size) => {
-                benchmark("resizing", || {
+                benchmark(format!("resizing to {size:?}").as_str(), || {
                     self.gpu
                         .as_mut()
                         .expect("gpu should be initialised")
@@ -44,7 +48,7 @@ impl ApplicationHandler for MosaicWindow {
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
-                        physical_key: PhysicalKey::Code(code),
+                        physical_key: PhysicalKey::Code(_),
                         ..
                     },
                 ..

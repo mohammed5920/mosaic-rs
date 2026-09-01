@@ -1,9 +1,9 @@
-pub mod file_io;
+pub mod file_util;
 pub mod matchmaker;
-pub mod rendering;
-pub mod source;
+pub mod renderer;
+pub mod media_source;
 pub mod tiles;
-pub mod video_capture;
+pub mod vidcap;
 
 use std::{path::Path, time::Instant};
 

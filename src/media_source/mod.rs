@@ -4,8 +4,8 @@ use anyhow::{Context, anyhow};
 use camino::Utf8PathBuf;
 
 use crate::{
-    file_io::{MediaType, check_supported_extension},
-    source::pic_source::PicSource,
+    file_util::{MediaType, check_supported_extension},
+    media_source::pic_source::PicSource,
 };
 
 mod pic_source;
