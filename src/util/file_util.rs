@@ -16,14 +16,14 @@ static VID_EXTENSIONS: LazyLock<HashSet<String>> = LazyLock::new(|| {
         .collect()
 });
 
-pub enum MediaType {
+pub(crate) enum MediaType {
     Vid,
     Pic,
     Etc,
 }
 
 //NOTE: all the supported extensions live here
-pub fn check_supported_extension(path: &Utf8PathBuf) -> MediaType {
+pub(crate) fn check_supported_extension(path: &Utf8PathBuf) -> MediaType {
     match path.extension().map(|e| e.to_lowercase()) {
         Some(pic) if PIC_EXTENSIONS.contains(&pic) => MediaType::Pic,
         Some(vid) if VID_EXTENSIONS.contains(&vid) => MediaType::Vid,
@@ -31,7 +31,7 @@ pub fn check_supported_extension(path: &Utf8PathBuf) -> MediaType {
     }
 }
 
-pub fn walk_dir(path: impl AsRef<Path> + Debug) -> anyhow::Result<Vec<Utf8PathBuf>> {
+pub(crate) fn walk_dir(path: impl AsRef<Path> + Debug) -> anyhow::Result<Vec<Utf8PathBuf>> {
     let mut res = Vec::new();
     for entry in fs::read_dir(&path).with_context(|| format!("{path:?}"))? {
         let entry = entry.with_context(|| format!("{path:?}"))?;

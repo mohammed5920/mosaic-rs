@@ -1,5 +1,9 @@
+use std::sync::Arc;
+
 use camino::Utf8PathBuf;
 use ffmpeg_next as ffmpeg;
+
+use crate::util::vid_util::{extract_plane, frame_idx_from_pts};
 
 //it is sometimes cheaper to fast forward a video to a given frame idx
 //rather than explicitly seek to it
@@ -8,76 +12,22 @@ use ffmpeg_next as ffmpeg;
 //so this is a best effort guess
 const HARD_SEEK_THRESHOLD_SECONDS: i64 = 4;
 
-//
-//util
-//
-///returns None on division by zero (invalid rational bases)
-pub fn frame_idx_from_pts(
-    stream_time_base: ffmpeg::Rational,
-    stream_frame_rate: ffmpeg::Rational,
-    stream_start_time: i64,
-    frame_pts: i64,
-) -> Option<i64> {
-    if frame_pts == ffmpeg::ffi::AV_NOPTS_VALUE {
-        return None;
-    }
-    let tb_num = stream_time_base.numerator() as f64;
-    let tb_den = stream_time_base.denominator() as f64;
-    let fr_num = stream_frame_rate.numerator() as f64;
-    let fr_den = stream_frame_rate.denominator() as f64;
-    if tb_den == 0.0 || fr_num == 0.0 {
-        return None;
-    }
-    let start_time = if stream_start_time == ffmpeg::ffi::AV_NOPTS_VALUE {
-        0.0
-    } else {
-        stream_start_time as f64
-    };
-    let relative_pts = frame_pts as f64 - start_time;
-    let frame_index_exact = (relative_pts * tb_num * fr_num) / (tb_den * fr_den);
-    Some(frame_index_exact.round() as i64)
+pub(crate) struct NvVideoFrame {
+    width: u64,
+    height: u64,
+    frame_index: i64,
+    y: Arc<[u8]>,
+    cb_cr: Arc<[u8]>,
 }
 
-///take a full size video frame plane, crop out the extra padding and make it match out_w * out_h * bpp exactly
-fn extract_plane(
-    data: &[u8],
-    stride: u64,
-    x_start: u64,
-    y_start: u64,
-    out_w: u64,
-    out_h: u64,
-    bpp: u64,
-) -> Vec<u8> {
-    let mut out = vec![0u8; (out_w * out_h * bpp) as usize];
-    for row in 0..out_h {
-        let src_row = y_start + row;
-        let row_byte_start = (src_row * stride + x_start * bpp) as usize;
-        let row_len = (out_w * bpp) as usize;
-        out[(row * out_w * bpp) as usize..][..row_len]
-            .copy_from_slice(&data[row_byte_start..row_byte_start + row_len]);
-    }
-    out
-}
-//
-//util
-//
-
-pub struct NvVideoFrame {
-    pub width: u64,
-    pub height: u64,
-    pub frame_index: i64,
-    pub y: Vec<u8>,
-    pub cb_cr: Vec<u8>,
+pub(crate) struct RgbVideoFrame {
+    width: u64,
+    height: u64,
+    frame_index: i64,
+    pub(crate) rgb: Arc<[u8]>,
 }
 
-pub struct RgbVideoFrame {
-    pub width: u64,
-    pub height: u64,
-    pub frame_index: i64,
-    pub rgb: Vec<u8>,
-}
-
-pub struct VideoCapture {
+pub(crate) struct VideoCapture {
     best_video_stream_index: usize,
     stream_time_base: ffmpeg::Rational,
     stream_frame_rate: ffmpeg::Rational,
@@ -95,7 +45,7 @@ pub struct VideoCapture {
 }
 
 impl VideoCapture {
-    pub fn open(
+    pub(crate) fn open(
         path: Utf8PathBuf,
         cropped_square_size: Option<u64>,
     ) -> Result<Self, ffmpeg::Error> {
@@ -224,7 +174,7 @@ impl VideoCapture {
     }
 
     ///this will seek such that calling the next read_frame() gives you the n=target_frame frame
-    pub fn seek_to_frame(&mut self, target_frame: i64) -> Result<(), ffmpeg::Error> {
+    fn seek_to_frame(&mut self, target_frame: i64) -> Result<(), ffmpeg::Error> {
         if self
             .last_decoded_frame_index
             .is_some_and(|i| target_frame == i + 1)
@@ -272,7 +222,7 @@ impl VideoCapture {
     }
 
     ///returns None if the video has ended
-    pub fn read_rgb_frame(&mut self) -> Result<Option<RgbVideoFrame>, ffmpeg::Error> {
+    pub(crate) fn read_rgb_frame(&mut self) -> Result<Option<RgbVideoFrame>, ffmpeg::Error> {
         let (frame_idx, raw_frame) = match self.read_raw_frame() {
             Ok(None) => return Ok(None),
             Err(e) => return Err(e),
@@ -303,13 +253,13 @@ impl VideoCapture {
         Ok(Some(RgbVideoFrame {
             width: out_width,
             height: out_height,
-            rgb: extract_plane(data, stride, x_start, y_start, out_width, out_height, 3),
+            rgb: extract_plane(data, stride, x_start, y_start, out_width, out_height, 3).into(),
             frame_index: frame_idx,
         }))
     }
 
     ///returns None if the video has ended
-    pub fn read_nv_frame(&mut self) -> Result<Option<NvVideoFrame>, ffmpeg::Error> {
+    fn read_nv_frame(&mut self) -> Result<Option<NvVideoFrame>, ffmpeg::Error> {
         let (frame_idx, raw_frame) = match self.read_raw_frame() {
             Ok(None) => return Ok(None),
             Err(e) => return Err(e),
@@ -362,8 +312,8 @@ impl VideoCapture {
         Ok(Some(NvVideoFrame {
             width: out_width,
             height: out_height,
-            y: y_plane,
-            cb_cr: cb_cr_plane,
+            y: y_plane.into(),
+            cb_cr: cb_cr_plane.into(),
             frame_index: frame_idx,
         }))
     }

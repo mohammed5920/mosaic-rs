@@ -38,12 +38,14 @@ imohash = { version = "0.1.2", default-features = false }
 #k-d tree for fast matching
 kiddo = { version = "6.0.2", default-features = false }
 
-##gpu stuff
+##gpu/windowing stuff
 #writing wgpu buffers
 bytemuck = { version = "1.25.2", default-features = false }
 #for wgpu querying
 pollster = { version = "1.0.1", default-features = false }
 #harness the gpu
-wgpu = { version = "30.0.1", default-features = false, features=["std", "wgpu-core", "vulkan", "wgsl", "parking_lot", "parking_lot"] }
+wgpu = { version = "30.0.1", default-features = false, features=["std", "wgpu-core", "wgsl", "parking_lot", "parking_lot", "vulkan", "dx12", "gles"] }
 #windowing wrapper
 winit = { version = "0.30.13", default-features = false, features = ["rwh_06"] }
+#file dialog / show panic in a message box
+rfd = { version = "0.17.2", default-features = false }

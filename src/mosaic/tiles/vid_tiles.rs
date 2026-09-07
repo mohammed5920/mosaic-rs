@@ -1,5 +1,8 @@
 use {
-    crate::{is_fixed_frame_rate, tiles::calc_average_colour, vidcap::VideoCapture},
+    crate::{
+        mosaic::tiles::calc_average_colour, util::vid_util::is_fixed_frame_rate,
+        vidcap::VideoCapture,
+    },
     camino::Utf8PathBuf,
     imohash::Hasher as ImoHasher,
     rustc_hash::{FxBuildHasher, FxHashMap},
@@ -7,7 +10,7 @@ use {
 };
 
 const CACHE_DIR: &str = "cache/tiles/";
-const DIFFERENCE_THRESHOLD: u32 = 300;
+const DIFFERENCE_THRESHOLD: u32 = 1;
 
 #[derive(bincode::Decode, bincode::Encode)]
 struct VidTilesCacheEntry {
@@ -37,11 +40,11 @@ enum CacheEvaluationResult {
     },
 }
 
-pub struct VidTile {
-    pub average_colour: [u8; 3],
-    pub source_path: Utf8PathBuf,
-    pub start_frame_index: u32,
-    pub end_frame_index: u32,
+pub(crate) struct VidTile {
+    pub(crate) average_colour: [u8; 3],
+    source_path: Utf8PathBuf,
+    start_frame_index: u32,
+    end_frame_index: u32,
 }
 
 //
@@ -152,7 +155,7 @@ fn process_video_for_vidtiles(
     })
 }
 
-pub fn vid_tiles_from_path(
+pub(crate) fn vid_tiles_from_path(
     source_path: Utf8PathBuf,
     tile_base_res: u64,
 ) -> anyhow::Result<Vec<VidTile>> {
@@ -170,7 +173,7 @@ pub fn vid_tiles_from_path(
     };
 
     let encoded = bincode::encode_to_vec(&res, bincode::config::standard())
-        .expect("Cache should be encoded to vec");
+        .expect("cache should be encoded to vec");
     fs::write(&cache_path, encoded)?;
 
     match res {

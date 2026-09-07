@@ -1,23 +1,21 @@
-use std::num::NonZero;
-
 use anyhow::{Context, anyhow};
 use camino::Utf8PathBuf;
 
 use crate::{
-    file_util::{MediaType, check_supported_extension},
-    media_source::pic_source::PicSource,
+    mosaic::media_source::pic_source::PicSource,
+    util::file_util::{MediaType, check_supported_extension},
 };
 
-mod pic_source;
-mod vid_source;
+pub(crate) mod pic_source;
+pub(crate) mod vid_source;
 
-pub enum Source {
+pub(crate) enum Source {
     Pic(PicSource),
     Vid,
 }
 
 impl Source {
-    pub fn open(path: &Utf8PathBuf, dscale_factor: NonZero<u32>) -> anyhow::Result<Source> {
+    pub(crate) fn open(path: &Utf8PathBuf, dscale_factor: u32) -> anyhow::Result<Source> {
         match check_supported_extension(path) {
             MediaType::Pic => Ok(Source::Pic(
                 PicSource::open(path, dscale_factor)
