@@ -3,7 +3,7 @@
 use ffmpeg_next as ffmpeg;
 use rustc_hash::{FxBuildHasher, FxHashSet};
 
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, sync::Arc, thread};
 
 use winit::{
     application::ApplicationHandler,
@@ -66,11 +66,18 @@ impl ApplicationHandler for App {
                     .unwrap(),
             )
         });
-        let mut renderer = benchmark("initialising GPU", || {
-            pollster::block_on(Renderer::initialise(window.clone(), true))
+        let (mut mosaic, mut renderer) = thread::scope(|s| {
+            let mosaic_fut = s.spawn(|| Mosaic::create(SOURCE, TILES));
+            let renderer = benchmark("initialising GPU", || {
+                pollster::block_on(Renderer::initialise(window.clone(), true))
+            });
+            let mosaic = mosaic_fut
+                .join()
+                .expect("Could not create mosaic")
+                .expect("Could not create mosaic");
+            (mosaic, renderer)
         });
-        let mosaic = Mosaic::create(SOURCE, TILES).expect("Could not create mosaic");
-        let streamer = benchmark("initialising streamer", || {
+        let mut streamer = benchmark("initialising streamer", || {
             Streamer::initialise(&renderer.device, &mut renderer.queue, &mosaic)
         });
         let camera = AppCameraWrapper::initialise(
@@ -87,6 +94,7 @@ impl ApplicationHandler for App {
             streamer.mosaic_view.clone(),
             streamer.palette_view.clone(),
         );
+        streamer.update(&mut renderer.queue, &mosaic.read_frame());
 
         self.0 = Some(AppState {
             streamer,
@@ -109,9 +117,7 @@ impl ApplicationHandler for App {
             //NOTE: resize handler
             WindowEvent::Resized(size) => {
                 self.state().camera.resize(size);
-                benchmark(format!("resizing to {size:?}").as_str(), || {
-                    self.state().renderer.resize(size)
-                });
+                self.state().renderer.resize(size)
             }
 
             WindowEvent::CursorMoved { position, .. } => {
@@ -171,11 +177,11 @@ impl ApplicationHandler for App {
 
             //NOTE: Renderer
             WindowEvent::RedrawRequested => {
-                let frame_matches = self.state().mosaic.read_frame();
+                // let frame_matches = self.state().mosaic.read_frame();
                 let s = self.state();
-                s.streamer.update(&mut s.renderer.queue, &frame_matches);
-                self.state().renderer.render();
-                self.state().window.request_redraw();
+                // s.streamer.update(&mut s.renderer.queue, &frame_matches);
+                s.renderer.render();
+                s.window.request_redraw();
             }
 
             //NOTE: destructor
