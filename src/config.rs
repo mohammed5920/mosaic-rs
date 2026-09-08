@@ -1,5 +1,9 @@
 use std::{
-    fs::{self, File}, io::BufWriter, num::NonZero, str::FromStr, sync::LazyLock,
+    fs::{self, File},
+    io::BufWriter,
+    num::NonZero,
+    str::FromStr,
+    sync::LazyLock,
 };
 
 use camino::Utf8PathBuf;
@@ -16,7 +20,7 @@ pub(crate) struct AppConfig {
 
     pub(crate) backend: wgpu::Backend,
     pub(crate) is_vsync: bool,
-    
+
     pub(crate) synthetic_tile_count: Option<NonZero<u64>>,
     pub(crate) hard_seek_threshold: NonZero<u64>,
     pub(crate) zoom_steps_per_octave: NonZero<u64>,

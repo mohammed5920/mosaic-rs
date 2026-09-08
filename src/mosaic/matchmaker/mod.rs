@@ -18,13 +18,17 @@ pub(crate) struct MatchIndex(pub(crate) i32);
 
 impl Matchmaker {
     pub(crate) fn from_tiles(tiles: &[Tile]) -> Matchmaker {
+        assert!(
+            tiles.len() <= 16_777_216,
+            "max no. of tiles is 16_777_216 (RGB colour space)"
+        );
         let mut colour_map = Vec::with_capacity(16_777_216);
         colour_map.extend((0..16_777_216).map(|_| AtomicI32::new(-1)));
         Matchmaker {
             kiddie: ImmutableKdTree::new_from_slice(
                 &tiles.iter().map(|t| t.average_colour()).collect::<Vec<_>>(),
             )
-            .expect("max no. of tiles is 16_777_216"),
+            .expect("could not build kiddo tree"),
             colour_map,
         }
     }
@@ -45,7 +49,7 @@ impl Matchmaker {
                     res = self
                         .kiddie
                         .query(pixel)
-                        .nearest_one::<SquaredEuclidean<f64>>()
+                        .nearest_one::<SquaredEuclidean<f32>>()
                         .execute()
                         .item as i32;
                     self.colour_map[key].store(res, Ordering::Relaxed);

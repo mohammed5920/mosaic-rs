@@ -39,7 +39,7 @@ image = { version = "0.25.10", default-features = false, features=["bmp", "gif",
 #constant time hashing of videos for caching
 imohash = { version = "0.1.2", default-features = false }
 #k-d tree for fast matching
-kiddo = { version = "6.0.2", default-features = false }
+kiddo = { version = "6.3.0", default-features = false }
 
 ##gpu/windowing stuff
 #writing wgpu buffers

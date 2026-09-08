@@ -2,7 +2,7 @@ pub(crate) mod pic_tiles;
 pub(crate) mod syn_tiles;
 pub(crate) mod vid_tiles;
 
-use std::{collections::HashSet, num::NonZero};
+use std::collections::HashSet;
 
 use camino::Utf8PathBuf;
 use rayon::prelude::*;
@@ -109,22 +109,4 @@ pub(crate) fn load_tiles(path: &Utf8PathBuf) -> anyhow::Result<Vec<Tile>> {
     );
 
     Ok(res)
-}
-
-pub(crate) fn load_synthetic_tiles(limit: NonZero<u64>) -> Vec<Tile> {
-    debug_assert!(limit.get() <= 16_777_216, "Max no. of synthetic tiles is 16_777_216");
-    (0..limit.get() as i32)
-        .into_par_iter()
-        .map(|i| {
-            let i = i * (16_777_216 / limit.get() as i32);
-            let (r, g, b) = (
-                (i / 256 / 256 % 256) as u8,
-                (i / 256 % 256) as u8,
-                (i % 256) as u8,
-            );
-            Tile::Syn(SynTile {
-                average_colour: [r, g, b],
-            })
-        })
-        .collect()
 }

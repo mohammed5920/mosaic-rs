@@ -8,7 +8,7 @@ use crate::{
     mosaic::{
         matchmaker::{MatchIndex, Matchmaker},
         media_source::{Source, pic_source::PicSource},
-        tiles::{Tile, load_synthetic_tiles, load_tiles},
+        tiles::{Tile, load_tiles, syn_tiles::load_synthetic_tiles},
     },
     util::benchmark,
 };
@@ -44,7 +44,9 @@ impl Mosaic {
         tiles_path: &Utf8PathBuf,
     ) -> anyhow::Result<Mosaic> {
         let tiles = if CONFIG.synthetic_tile_count.is_some() {
-            benchmark("generating synthetic tiles", || load_synthetic_tiles(CONFIG.synthetic_tile_count.unwrap()))
+            benchmark("generating synthetic tiles", || {
+                load_synthetic_tiles(CONFIG.synthetic_tile_count.unwrap())
+            })
         } else {
             benchmark("loading tiles", || load_tiles(tiles_path))?
         };
@@ -115,18 +117,4 @@ impl Mosaic {
             Mosaic::DynamicMosaic => todo!(),
         }
     }
-
-    // ///dynamic mosaics do not track unique matches (will approach total tileset anyway since videos have so many colours)
-    // pub(crate) fn unique_matches(&self) -> Arc<[MatchIndex]> {
-    //     match self {
-    //         Mosaic::StaticMosaic { unique_matches, .. } => unique_matches.clone(),
-    //         Mosaic::DynamicMosaic => Arc::from(
-    //             self.tiles()
-    //                 .iter()
-    //                 .enumerate()
-    //                 .map(|(i, _)| MatchIndex(i as i32))
-    //                 .collect::<Vec<_>>(),
-    //         ),
-    //     }
-    // }
 }
