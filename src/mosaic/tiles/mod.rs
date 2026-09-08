@@ -8,6 +8,7 @@ use rayon::prelude::*;
 use rustc_hash::FxBuildHasher;
 
 use crate::{
+    config::CONFIG,
     mosaic::tiles::{
         pic_tiles::PicTile,
         vid_tiles::{VidTile, vid_tiles_from_path},
@@ -51,12 +52,7 @@ impl Tile {
     }
 }
 
-pub(crate) fn load_tiles(
-    path: &Utf8PathBuf,
-    tile_base_res: u64,
-    cache_path: &Utf8PathBuf,
-    difference_threshold: u64,
-) -> anyhow::Result<Vec<Tile>> {
+pub(crate) fn load_tiles(path: &Utf8PathBuf) -> anyhow::Result<Vec<Tile>> {
     let files = walk_dir(path)?;
     let (mut res, mut pics, mut vids) = (Vec::new(), Vec::new(), Vec::new());
     for file_path in files.into_iter() {
@@ -79,9 +75,9 @@ pub(crate) fn load_tiles(
             .filter_map(|file_path| {
                 vid_tiles_from_path(
                     file_path.clone(),
-                    cache_path.clone(),
-                    tile_base_res,
-                    difference_threshold,
+                    CONFIG.cache_path.clone(),
+                    CONFIG.tile_base_res,
+                    CONFIG.difference_threshold,
                 )
                 .inspect(|v| println!("{file_path} - {} tiles", v.len()))
                 .inspect_err(|e| eprintln!("{file_path} - {e:?}"))

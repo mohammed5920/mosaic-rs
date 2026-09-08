@@ -2,6 +2,8 @@ use std::{fs, sync::Arc};
 
 use winit::{dpi::PhysicalSize, window::Window};
 
+use crate::config::CONFIG;
+
 pub(crate) struct Renderer {
     ///the gpu
     pub(crate) device: wgpu::Device,
@@ -20,13 +22,9 @@ pub(crate) struct Renderer {
 
 impl Renderer {
     //NOTE: wgpu initialiser
-    pub(crate) async fn initialise(
-        window: Arc<Window>,
-        vsync: bool,
-        backend: wgpu::Backend,
-    ) -> Self {
+    pub(crate) async fn initialise(window: Arc<Window>) -> Self {
         let instance: wgpu::Instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: backend.into(),
+            backends: CONFIG.backend.into(),
             flags: Default::default(),
             memory_budget_thresholds: Default::default(),
             backend_options: Default::default(),
@@ -56,7 +54,7 @@ impl Renderer {
         let mut config = surface
             .get_default_config(&adapter, size.width.max(1), size.height.max(1))
             .expect("surface not supported by adapter");
-        config.present_mode = if vsync {
+        config.present_mode = if CONFIG.vsync {
             wgpu::PresentMode::AutoVsync
         } else {
             wgpu::PresentMode::AutoNoVsync

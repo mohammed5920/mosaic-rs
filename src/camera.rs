@@ -1,6 +1,8 @@
 use wgpu::util::DeviceExt as _;
 use winit::dpi::PhysicalSize;
 
+use crate::config::CONFIG;
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct AppCamera {
@@ -24,13 +26,12 @@ impl AppCameraWrapper {
         queue: wgpu::Queue,
         mosaic_dims: (f32, f32),
         window_dims: (f32, f32),
-        zoom_steps_per_octave: u64,
     ) -> Self {
         let inner_camera = AppCamera {
             center: [mosaic_dims.0 / 2.0, mosaic_dims.1 / 2.0],
             viewport: [window_dims.0, window_dims.1],
             zoom_steps: 0,
-            steps_per_octave: zoom_steps_per_octave as u32,
+            steps_per_octave: CONFIG.zoom_steps_per_octave as u32,
         };
         AppCameraWrapper {
             buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {

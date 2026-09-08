@@ -2,12 +2,14 @@ use std::{
     fs::{self, File},
     io::BufWriter,
     str::FromStr,
+    sync::LazyLock,
 };
 
 use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 
 const CONFIG_PATH: &str = "config.json";
+pub(crate) static CONFIG: LazyLock<AppConfig> = LazyLock::new(load_config);
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct AppConfig {

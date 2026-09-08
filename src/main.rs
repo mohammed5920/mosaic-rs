@@ -14,7 +14,7 @@ use winit::{
 
 use crate::{
     camera::AppCameraWrapper,
-    config::{AppConfig, load_config},
+    config::{CONFIG, load_config},
     mosaic::Mosaic,
     renderer::Renderer,
     streamer::Streamer,
@@ -43,7 +43,6 @@ struct AppState {
     renderer: Renderer,
     camera: AppCameraWrapper,
     input: InputState,
-    config: AppConfig,
 }
 
 struct App(Option<AppState>);
@@ -57,7 +56,6 @@ impl App {
 impl ApplicationHandler for App {
     //NOTE: Initialiser
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let config = load_config();
         let window = benchmark("creating window", || {
             Arc::new(
                 event_loop
@@ -66,21 +64,9 @@ impl ApplicationHandler for App {
             )
         });
         let (mut mosaic, mut renderer) = thread::scope(|s| {
-            let mosaic_fut = s.spawn(|| {
-                Mosaic::create(
-                    &config.source_path,
-                    &config.tile_path,
-                    config.tile_base_res,
-                    &config.cache_path,
-                    config.difference_threshold,
-                )
-            });
+            let mosaic_fut = s.spawn(|| Mosaic::create(&CONFIG.source_path, &CONFIG.tile_path));
             let renderer = benchmark("initialising GPU", || {
-                pollster::block_on(Renderer::initialise(
-                    window.clone(),
-                    config.vsync,
-                    config.backend,
-                ))
+                pollster::block_on(Renderer::initialise(window.clone()))
             });
             let mosaic = mosaic_fut
                 .join()
@@ -99,7 +85,6 @@ impl ApplicationHandler for App {
                 window.inner_size().width as f32,
                 window.inner_size().height as f32,
             ),
-            config.zoom_steps_per_octave,
         );
         renderer.bind_resources(
             &camera.buffer,
@@ -120,7 +105,6 @@ impl ApplicationHandler for App {
                 is_playing: true,
                 is_clicked: false,
             },
-            config,
         });
     }
 
@@ -208,6 +192,7 @@ impl ApplicationHandler for App {
 
 pub(crate) fn main() {
     set_panic_hook();
+    load_config();
     ffmpeg::init().expect("Could not initialise FFMPEG");
     let event_loop: EventLoop<()> = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Wait);

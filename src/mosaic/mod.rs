@@ -41,13 +41,8 @@ impl Mosaic {
     pub(crate) fn create(
         source_path: &Utf8PathBuf,
         tiles_path: &Utf8PathBuf,
-        tile_base_res: u64,
-        cache_path: &Utf8PathBuf,
-        difference_threshold: u64,
     ) -> anyhow::Result<Mosaic> {
-        let tiles = benchmark("loading tiles", || {
-            load_tiles(tiles_path, tile_base_res, cache_path, difference_threshold)
-        })?;
+        let tiles = benchmark("loading tiles", || load_tiles(tiles_path))?;
         let matchmaker = benchmark("generating match tree", || Matchmaker::from_tiles(&tiles));
         let source = benchmark("loading source", || Source::open(source_path))?;
         match source {
