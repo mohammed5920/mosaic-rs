@@ -28,21 +28,21 @@ pub(crate) fn set_panic_hook() {
     std::panic::set_hook(Box::new(move |info| {
         //printing it is still useful
         old_hook(info);
-        // let payload = info.payload_as_str().unwrap_or("idk");
-        // let (file, line) = info
-        //     .location()
-        //     .map_or(("Not provided", 0), |l| (l.file(), l.line()));
+        let payload = info.payload_as_str().unwrap_or("idk");
+        let (file, line) = info
+            .location()
+            .map_or(("Not provided", 0), |l| (l.file(), l.line()));
 
-        // rfd::MessageDialog::new()
-        //     .set_title("Do you understand what just happened?")
-        //     .set_description(format!(
-        //         "Your application just crashed.\n\n\
-        //          One file ({file}). One line ({line}).\n\n\
-        //          Here's what that really means 👇🧵\n\n\
-        //          {payload}",
-        //     ))
-        //     .set_level(rfd::MessageLevel::Error)
-        //     .set_buttons(rfd::MessageButtons::Ok)
-        //     .show();
+        rfd::MessageDialog::new()
+            .set_title("Do you understand what just happened?")
+            .set_description(format!(
+                "Your application just crashed.\n\n\
+                 One file ({file}). One line ({line}).\n\n\
+                 Here's what that really means 👇🧵\n\n\
+                 {payload}",
+            ))
+            .set_level(rfd::MessageLevel::Error)
+            .set_buttons(rfd::MessageButtons::Ok)
+            .show();
     }));
 }

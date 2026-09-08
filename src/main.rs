@@ -67,7 +67,7 @@ impl ApplicationHandler for App {
         let (mut mosaic, mut renderer) = thread::scope(|s| {
             let mosaic_fut = s.spawn(|| Mosaic::create(SOURCE, TILES));
             let renderer = benchmark("initialising GPU", || {
-                pollster::block_on(Renderer::initialise(window.clone(), true))
+                pollster::block_on(Renderer::initialise(window.clone(), true, wgpu::Backend::Dx12))
             });
             let mosaic = mosaic_fut
                 .join()

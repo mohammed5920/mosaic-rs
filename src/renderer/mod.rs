@@ -20,9 +20,9 @@ pub(crate) struct Renderer {
 
 impl Renderer {
     //NOTE: wgpu initialiser
-    pub(crate) async fn initialise(window: Arc<Window>, vsync: bool) -> Self {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::VULKAN,
+    pub(crate) async fn initialise(window: Arc<Window>, vsync: bool, backend: wgpu::Backend) -> Self {
+        let instance: wgpu::Instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: backend.into(),
             flags: Default::default(),
             memory_budget_thresholds: Default::default(),
             backend_options: Default::default(),
