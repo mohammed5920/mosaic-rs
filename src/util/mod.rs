@@ -3,7 +3,7 @@ pub(crate) mod vid_util;
 
 use std::time::Instant;
 
-pub(crate) fn benchmark<T>(label: &str, mut function: impl FnMut() -> T) -> T {
+pub(crate) fn benchmark<T>(label: &str, function: impl FnOnce() -> T) -> T {
     let start = Instant::now();
     let res = function();
     let duration = Instant::now().duration_since(start);

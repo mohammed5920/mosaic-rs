@@ -10,8 +10,6 @@ use crate::util::vid_util::{extract_plane, frame_idx_from_pts};
 //depending on the gap between where the current frame is vs the target frame
 //how big is that gap? not easily discoverable, changes per video and sometimes while playing
 //so this is a best effort guess
-const HARD_SEEK_THRESHOLD_SECONDS: i64 = 4;
-
 pub(crate) struct NvVideoFrame {
     width: u64,
     height: u64,
@@ -174,7 +172,11 @@ impl VideoCapture {
     }
 
     ///this will seek such that calling the next read_frame() gives you the n=target_frame frame
-    fn seek_to_frame(&mut self, target_frame: i64) -> Result<(), ffmpeg::Error> {
+    fn seek_to_frame(
+        &mut self,
+        target_frame: i64,
+        hard_seek_threshold: u64,
+    ) -> Result<(), ffmpeg::Error> {
         if self
             .last_decoded_frame_index
             .is_some_and(|i| target_frame == i + 1)
@@ -186,7 +188,7 @@ impl VideoCapture {
         if self.last_decoded_frame_index.is_none_or(|i| {
             target_frame < i
                 || (target_frame - i)
-                    > HARD_SEEK_THRESHOLD_SECONDS * self.stream_frame_rate.numerator() as i64
+                    > hard_seek_threshold as i64 * self.stream_frame_rate.numerator() as i64
                         / self.stream_frame_rate.denominator() as i64
         }) {
             let target_ts = target_frame * self.stream_frame_rate.denominator() as i64
@@ -207,7 +209,7 @@ impl VideoCapture {
                 Some((frame_idx, _)) if frame_idx + 1 > target_frame => {
                     eprintln!(
                         "{} has sought ahead from target frame {} to frame {}...",
-                        self.path.clone(),
+                        self.path,
                         target_frame - 1,
                         frame_idx
                     );

@@ -15,12 +15,13 @@ pub(crate) enum Source {
 }
 
 impl Source {
-    pub(crate) fn open(path: &Utf8PathBuf, dscale_factor: u32) -> anyhow::Result<Source> {
+    pub(crate) fn open(path: &Utf8PathBuf) -> anyhow::Result<Source> {
         match check_supported_extension(path) {
-            MediaType::Pic => Ok(Source::Pic(
-                PicSource::open(path, dscale_factor)
-                    .with_context(|| format!("Error while opening {path} as source"))?,
-            )),
+            MediaType::Pic => {
+                Ok(Source::Pic(PicSource::open(path).with_context(|| {
+                    format!("Error while opening {path} as source")
+                })?))
+            }
             MediaType::Vid => todo!(),
             MediaType::Etc => Err(anyhow!("Unrecognised source extension")),
         }

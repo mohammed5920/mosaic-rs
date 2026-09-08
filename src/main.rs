@@ -14,6 +14,7 @@ use winit::{
 
 use crate::{
     camera::AppCameraWrapper,
+    config::{AppConfig, load_config},
     mosaic::Mosaic,
     renderer::Renderer,
     streamer::Streamer,
@@ -21,14 +22,12 @@ use crate::{
 };
 
 mod camera;
+mod config;
 mod mosaic;
 mod renderer;
 mod streamer;
 mod util;
 mod vidcap;
-
-const SOURCE: &str = "test/source.jpg";
-const TILES: &str = "test/vid_tiles/S2";
 
 struct InputState {
     cursor_pos: (f64, f64),
@@ -44,6 +43,7 @@ struct AppState {
     renderer: Renderer,
     camera: AppCameraWrapper,
     input: InputState,
+    config: AppConfig,
 }
 
 struct App(Option<AppState>);
@@ -57,6 +57,7 @@ impl App {
 impl ApplicationHandler for App {
     //NOTE: Initialiser
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        let config = load_config();
         let window = benchmark("creating window", || {
             Arc::new(
                 event_loop
@@ -65,9 +66,21 @@ impl ApplicationHandler for App {
             )
         });
         let (mut mosaic, mut renderer) = thread::scope(|s| {
-            let mosaic_fut = s.spawn(|| Mosaic::create(SOURCE, TILES));
+            let mosaic_fut = s.spawn(|| {
+                Mosaic::create(
+                    &config.source_path,
+                    &config.tile_path,
+                    config.tile_base_res,
+                    &config.cache_path,
+                    config.difference_threshold,
+                )
+            });
             let renderer = benchmark("initialising GPU", || {
-                pollster::block_on(Renderer::initialise(window.clone(), true, wgpu::Backend::Dx12))
+                pollster::block_on(Renderer::initialise(
+                    window.clone(),
+                    config.vsync,
+                    config.backend,
+                ))
             });
             let mosaic = mosaic_fut
                 .join()
@@ -86,6 +99,7 @@ impl ApplicationHandler for App {
                 window.inner_size().width as f32,
                 window.inner_size().height as f32,
             ),
+            config.zoom_steps_per_octave,
         );
         renderer.bind_resources(
             &camera.buffer,
@@ -106,6 +120,7 @@ impl ApplicationHandler for App {
                 is_playing: true,
                 is_clicked: false,
             },
+            config,
         });
     }
 

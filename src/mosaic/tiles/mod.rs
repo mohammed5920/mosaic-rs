@@ -51,7 +51,12 @@ impl Tile {
     }
 }
 
-pub(crate) fn load_tiles(path: &Utf8PathBuf, tile_base_res: u64) -> anyhow::Result<Vec<Tile>> {
+pub(crate) fn load_tiles(
+    path: &Utf8PathBuf,
+    tile_base_res: u64,
+    cache_path: &Utf8PathBuf,
+    difference_threshold: u64,
+) -> anyhow::Result<Vec<Tile>> {
     let files = walk_dir(path)?;
     let (mut res, mut pics, mut vids) = (Vec::new(), Vec::new(), Vec::new());
     for file_path in files.into_iter() {
@@ -72,10 +77,15 @@ pub(crate) fn load_tiles(path: &Utf8PathBuf, tile_base_res: u64) -> anyhow::Resu
     res.par_extend(
         vids.into_par_iter()
             .filter_map(|file_path| {
-                vid_tiles_from_path(file_path.clone(), tile_base_res)
-                    .inspect(|v| println!("{file_path} - {} tiles", v.len()))
-                    .inspect_err(|e| eprintln!("{file_path} - {e:?}"))
-                    .ok()
+                vid_tiles_from_path(
+                    file_path.clone(),
+                    cache_path.clone(),
+                    tile_base_res,
+                    difference_threshold,
+                )
+                .inspect(|v| println!("{file_path} - {} tiles", v.len()))
+                .inspect_err(|e| eprintln!("{file_path} - {e:?}"))
+                .ok()
             })
             .flatten()
             .map(Tile::Vid),
