@@ -1,8 +1,5 @@
 use std::{
-    fs::{self, File},
-    io::BufWriter,
-    str::FromStr,
-    sync::LazyLock,
+    fs::{self, File}, io::BufWriter, num::NonZero, str::FromStr, sync::LazyLock,
 };
 
 use camino::Utf8PathBuf;
@@ -17,13 +14,15 @@ pub(crate) struct AppConfig {
     pub(crate) tile_path: Utf8PathBuf,
     pub(crate) cache_path: Utf8PathBuf,
 
-    pub(crate) vsync: bool,
     pub(crate) backend: wgpu::Backend,
-
-    pub(crate) hard_seek_threshold: u64,
+    pub(crate) is_vsync: bool,
+    
+    pub(crate) synthetic_tile_count: Option<NonZero<u64>>,
+    pub(crate) hard_seek_threshold: NonZero<u64>,
+    pub(crate) zoom_steps_per_octave: NonZero<u64>,
+    pub(crate) tile_base_res: NonZero<u64>,
+    //can be zero to load every single video frame as a tile
     pub(crate) difference_threshold: u64,
-    pub(crate) zoom_steps_per_octave: u64,
-    pub(crate) tile_base_res: u64,
 }
 
 pub(crate) fn load_config() -> AppConfig {
@@ -41,12 +40,15 @@ pub(crate) fn load_config() -> AppConfig {
                 source_path: Utf8PathBuf::from_str("test/test.jpg").unwrap(),
                 tile_path: Utf8PathBuf::from_str("test/vid_tiles").unwrap(),
                 cache_path: Utf8PathBuf::from_str("cache").unwrap(),
-                vsync: true,
+
+                is_vsync: true,
                 backend: wgpu::Backend::Vulkan,
-                hard_seek_threshold: 4,
+
+                synthetic_tile_count: None,
                 difference_threshold: 300,
-                zoom_steps_per_octave: 30,
-                tile_base_res: 64,
+                hard_seek_threshold: NonZero::new(4).unwrap(),
+                zoom_steps_per_octave: NonZero::new(30).unwrap(),
+                tile_base_res: NonZero::new(64).unwrap(),
             };
             let writer = File::create(CONFIG_PATH).expect("could not create config writer");
             let writer = BufWriter::new(writer);

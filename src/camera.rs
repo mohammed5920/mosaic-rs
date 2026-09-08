@@ -31,7 +31,7 @@ impl AppCameraWrapper {
             center: [mosaic_dims.0 / 2.0, mosaic_dims.1 / 2.0],
             viewport: [window_dims.0, window_dims.1],
             zoom_steps: 0,
-            steps_per_octave: CONFIG.zoom_steps_per_octave as u32,
+            steps_per_octave: CONFIG.zoom_steps_per_octave.get() as u32,
         };
         AppCameraWrapper {
             buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {

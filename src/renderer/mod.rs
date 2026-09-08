@@ -54,7 +54,7 @@ impl Renderer {
         let mut config = surface
             .get_default_config(&adapter, size.width.max(1), size.height.max(1))
             .expect("surface not supported by adapter");
-        config.present_mode = if CONFIG.vsync {
+        config.present_mode = if CONFIG.is_vsync {
             wgpu::PresentMode::AutoVsync
         } else {
             wgpu::PresentMode::AutoNoVsync

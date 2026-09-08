@@ -4,10 +4,11 @@ use camino::Utf8PathBuf;
 use rayon::slice::ParallelSliceMut;
 
 use crate::{
+    config::CONFIG,
     mosaic::{
         matchmaker::{MatchIndex, Matchmaker},
         media_source::{Source, pic_source::PicSource},
-        tiles::{Tile, load_tiles},
+        tiles::{Tile, load_synthetic_tiles, load_tiles},
     },
     util::benchmark,
 };
@@ -42,7 +43,11 @@ impl Mosaic {
         source_path: &Utf8PathBuf,
         tiles_path: &Utf8PathBuf,
     ) -> anyhow::Result<Mosaic> {
-        let tiles = benchmark("loading tiles", || load_tiles(tiles_path))?;
+        let tiles = if CONFIG.synthetic_tile_count.is_some() {
+            benchmark("generating synthetic tiles", || load_synthetic_tiles(CONFIG.synthetic_tile_count.unwrap()))
+        } else {
+            benchmark("loading tiles", || load_tiles(tiles_path))?
+        };
         let matchmaker = benchmark("generating match tree", || Matchmaker::from_tiles(&tiles));
         let source = benchmark("loading source", || Source::open(source_path))?;
         match source {
