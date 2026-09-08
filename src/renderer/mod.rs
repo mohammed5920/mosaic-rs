@@ -1,12 +1,8 @@
 use std::{fs, sync::Arc};
 
-use winit::window::Window;
+use winit::{dpi::PhysicalSize, window::Window};
 
-pub(crate) struct GpuStreamingState {
-    streaming_bind_group: wgpu::BindGroup,
-}
-
-pub(crate) struct GpuState {
+pub(crate) struct Renderer {
     ///the gpu
     pub(crate) device: wgpu::Device,
     ///the command queue the gpu chews through
@@ -19,10 +15,10 @@ pub(crate) struct GpuState {
     ///pipeline for the main mosaic shaders
     pipeline: wgpu::RenderPipeline,
 
-    streaming_resources: Option<GpuStreamingState>,
+    rendering_bind_group: Option<wgpu::BindGroup>,
 }
 
-impl GpuState {
+impl Renderer {
     //NOTE: wgpu initialiser
     pub(crate) async fn initialise(window: Arc<Window>, vsync: bool) -> Self {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -127,34 +123,38 @@ impl GpuState {
             queue,
             surface_config: config,
             pipeline,
-            streaming_resources: None,
+            rendering_bind_group: None,
         }
     }
 
-    pub(crate) fn bind_streaming_resources(
+    pub(crate) fn bind_resources(
         &mut self,
+        camera_buffer: &wgpu::Buffer,
         mosaic_view: wgpu::TextureView,
         palette_view: wgpu::TextureView,
     ) {
-        self.streaming_resources = Some(GpuStreamingState {
-            streaming_bind_group: self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        self.rendering_bind_group =
+            Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("saic_Streaming Bind Group"),
                 layout: &self.pipeline.get_bind_group_layout(0),
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&mosaic_view),
+                        resource: camera_buffer.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&mosaic_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
                         resource: wgpu::BindingResource::TextureView(&palette_view),
                     },
                 ],
-            }),
-        })
+            }))
     }
 
-    pub(crate) fn resize(&mut self, size: winit::dpi::PhysicalSize<u32>) {
+    pub(crate) fn resize(&mut self, size: PhysicalSize<u32>) {
         self.surface_config.width = size.width.max(1);
         self.surface_config.height = size.height.max(1);
         self.surface.configure(&self.device, &self.surface_config);
@@ -202,16 +202,14 @@ impl GpuState {
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(
                 0,
-                &self
-                    .streaming_resources
+                self.rendering_bind_group
                     .as_ref()
-                    .expect("streaming should be initialised")
-                    .streaming_bind_group,
+                    .expect("streaming should be initialised"),
                 &[],
             );
             pass.draw(0..4, 0..1);
         }
-        
+
         self.queue.submit(Some(encoder.finish()));
         self.queue.present(frame);
     }

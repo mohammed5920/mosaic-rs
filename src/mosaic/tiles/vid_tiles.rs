@@ -10,13 +10,14 @@ use {
 };
 
 const CACHE_DIR: &str = "cache/tiles/";
-const DIFFERENCE_THRESHOLD: u32 = 1;
+const DIFFERENCE_THRESHOLD: u32 = 300;
 
 #[derive(bincode::Decode, bincode::Encode)]
 struct VidTilesCacheEntry {
-    //used just for debugging, not as source of truth for anything
+    ///used just for debugging, not as source of truth for anything
     from_path: String,
-    colours: Vec<[u8; 3]>, //avg color of every frame in the video
+    ///avg color of every frame in the video
+    colours: Vec<[u8; 3]>,
 }
 
 #[derive(bincode::Decode, bincode::Encode)]

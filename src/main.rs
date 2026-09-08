@@ -1,24 +1,27 @@
 #[allow(clippy::all)]
 #[allow(clippy::pedantic)]
 use ffmpeg_next as ffmpeg;
+use rustc_hash::{FxBuildHasher, FxHashSet};
 
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use winit::{
     application::ApplicationHandler,
-    event::{KeyEvent, WindowEvent},
+    event::{KeyEvent, MouseButton, MouseScrollDelta::LineDelta, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-    keyboard::PhysicalKey,
+    keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowId},
 };
 
 use crate::{
+    camera::AppCameraWrapper,
     mosaic::Mosaic,
-    renderer::GpuState,
+    renderer::Renderer,
     streamer::Streamer,
     util::{benchmark, set_panic_hook},
 };
 
+mod camera;
 mod mosaic;
 mod renderer;
 mod streamer;
@@ -28,11 +31,21 @@ mod vidcap;
 const SOURCE: &str = "test/source.jpg";
 const TILES: &str = "test/vid_tiles/S2";
 
+struct InputState {
+    held_keys: FxHashSet<KeyCode>,
+    cursor_pos: (f64, f64),
+    is_clicked: bool,
+    clicked_cursor_pos: Option<(f64, f64)>,
+    is_playing: bool,
+}
+
 struct AppState {
     mosaic: Mosaic,
     streamer: Streamer,
     window: Arc<Window>,
-    gpu: GpuState,
+    renderer: Renderer,
+    camera: AppCameraWrapper,
+    input: InputState,
 }
 
 struct App(Option<AppState>);
@@ -53,20 +66,41 @@ impl ApplicationHandler for App {
                     .unwrap(),
             )
         });
-        let mut gpu = benchmark("initialising GPU", || {
-            pollster::block_on(GpuState::initialise(window.clone(), false))
+        let mut renderer = benchmark("initialising GPU", || {
+            pollster::block_on(Renderer::initialise(window.clone(), true))
         });
         let mosaic = Mosaic::create(SOURCE, TILES).expect("Could not create mosaic");
         let streamer = benchmark("initialising streamer", || {
-            Streamer::initialise(&gpu.device, &mut gpu.queue, &mosaic)
+            Streamer::initialise(&renderer.device, &mut renderer.queue, &mosaic)
         });
-        gpu.bind_streaming_resources(streamer.mosaic_view.clone(), streamer.palette_view.clone());
+        let camera = AppCameraWrapper::initialise(
+            &renderer.device,
+            renderer.queue.clone(),
+            (mosaic.width() as f32, mosaic.height() as f32),
+            (
+                window.inner_size().width as f32,
+                window.inner_size().height as f32,
+            ),
+        );
+        renderer.bind_resources(
+            &camera.buffer,
+            streamer.mosaic_view.clone(),
+            streamer.palette_view.clone(),
+        );
 
         self.0 = Some(AppState {
-            mosaic,
             streamer,
+            mosaic,
             window,
-            gpu,
+            renderer,
+            camera,
+            input: InputState {
+                held_keys: HashSet::with_hasher(FxBuildHasher),
+                cursor_pos: (0., 0.),
+                clicked_cursor_pos: None,
+                is_playing: true,
+                is_clicked: false,
+            },
         });
     }
 
@@ -74,27 +108,73 @@ impl ApplicationHandler for App {
         match event {
             //NOTE: resize handler
             WindowEvent::Resized(size) => {
+                self.state().camera.resize(size);
                 benchmark(format!("resizing to {size:?}").as_str(), || {
-                    self.state().gpu.resize(size)
+                    self.state().renderer.resize(size)
                 });
+            }
+
+            WindowEvent::CursorMoved { position, .. } => {
+                self.state().input.cursor_pos = (position.x, position.y);
+                if self.state().input.is_clicked {
+                    if let Some((ox, oy)) = self.state().input.clicked_cursor_pos {
+                        let (nx, ny) = self.state().input.cursor_pos;
+                        let (dx, dy) = (nx - ox, ny - oy);
+                        self.state().camera.pan((-dx as f32, -dy as f32));
+                    }
+                    self.state().input.clicked_cursor_pos = Some(self.state().input.cursor_pos);
+                } else {
+                    self.state().input.clicked_cursor_pos = None;
+                }
+            }
+
+            WindowEvent::MouseInput {
+                state,
+                button: MouseButton::Left,
+                ..
+            } => {
+                self.state().input.is_clicked = state.is_pressed();
+                if !state.is_pressed() {
+                    self.state().input.clicked_cursor_pos = None;
+                }
+            }
+
+            WindowEvent::MouseWheel {
+                delta: LineDelta(_, y),
+                ..
+            } => {
+                if y > 0.0 {
+                    //NOTE: mouse wheel delta (4 matching python)
+                    self.state().camera.zoom(4);
+                } else if y < 0.0 {
+                    self.state().camera.zoom(-4);
+                }
             }
 
             //NOTE: keyboard handler
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
-                        physical_key: PhysicalKey::Code(_),
+                        physical_key: PhysicalKey::Code(key_code),
                         ..
                     },
                 ..
-            } => {}
+            } => match key_code {
+                KeyCode::KeyD => self.state().camera.pan((-10.0, 0.0)),
+                KeyCode::KeyS => self.state().camera.pan((0.0, 10.0)),
+                KeyCode::KeyA => self.state().camera.pan((10.0, 0.0)),
+                KeyCode::KeyW => self.state().camera.pan((0.0, -10.0)),
+                KeyCode::ArrowUp => self.state().camera.zoom(1),
+                KeyCode::ArrowDown => self.state().camera.zoom(-1),
+                _ => {}
+            },
 
             //NOTE: Renderer
             WindowEvent::RedrawRequested => {
                 let frame_matches = self.state().mosaic.read_frame();
                 let s = self.state();
-                s.streamer.update(&mut s.gpu.queue, &frame_matches);
-                self.state().gpu.render();
+                s.streamer.update(&mut s.renderer.queue, &frame_matches);
+                self.state().renderer.render();
                 self.state().window.request_redraw();
             }
 
