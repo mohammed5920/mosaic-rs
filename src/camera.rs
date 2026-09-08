@@ -28,7 +28,7 @@ impl AppCameraWrapper {
         let inner_camera = AppCamera {
             center: [mosaic_dims.0 / 2.0, mosaic_dims.1 / 2.0],
             viewport: [window_dims.0, window_dims.1],
-            zoom_steps: -10,
+            zoom_steps: 0,
             steps_per_octave: 30,
         };
         AppCameraWrapper {

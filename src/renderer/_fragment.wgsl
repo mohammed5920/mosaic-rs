@@ -26,7 +26,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let mosaic_dims = textureDimensions(mosaic_texture);
     if (world_pos.x < 0.0 || world_pos.y < 0.0 ||
         world_pos.x >= f32(mosaic_dims.x) || world_pos.y >= f32(mosaic_dims.y)) {
-        return vec4<f32>(0.0, 0.0, 0.0, 1.0); // out of bounds, e.g. black/background
+        return vec4<f32>(0.0, 0.0, 0.0, 1.0); //oob
     }
 
     let x = u32(world_pos.x);

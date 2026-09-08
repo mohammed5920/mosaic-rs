@@ -1,9 +1,8 @@
 #[allow(clippy::all)]
 #[allow(clippy::pedantic)]
 use ffmpeg_next as ffmpeg;
-use rustc_hash::{FxBuildHasher, FxHashSet};
 
-use std::{collections::HashSet, sync::Arc, thread};
+use std::{sync::Arc, thread};
 
 use winit::{
     application::ApplicationHandler,
@@ -32,7 +31,6 @@ const SOURCE: &str = "test/source.jpg";
 const TILES: &str = "test/vid_tiles/S2";
 
 struct InputState {
-    held_keys: FxHashSet<KeyCode>,
     cursor_pos: (f64, f64),
     is_clicked: bool,
     clicked_cursor_pos: Option<(f64, f64)>,
@@ -103,7 +101,6 @@ impl ApplicationHandler for App {
             renderer,
             camera,
             input: InputState {
-                held_keys: HashSet::with_hasher(FxBuildHasher),
                 cursor_pos: (0., 0.),
                 clicked_cursor_pos: None,
                 is_playing: true,
