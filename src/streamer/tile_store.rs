@@ -1,6 +1,6 @@
-use std::rc::Rc;
+use std::{collections::HashMap, rc::Rc};
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use crate::types::StoreIndex;
 
@@ -9,25 +9,35 @@ pub(crate) enum TileStore {
     Smart(SmartStore),
 }
 
-struct StoredFrame {
+pub(crate) struct StoredFrame {
     y: Rc<[u8]>,
     cb_cr: Rc<[u8]>,
 }
 
-struct FastStore {
+pub(crate) struct FastStore {
     inner: Vec<StoredFrame>,
 }
 
-struct SmartStore {
+pub(crate) struct SmartStore {
     inner: FxHashMap<StoreIndex, StoredFrame>,
 }
 
 impl TileStore {
     pub(crate) fn new(tile_size: u64, length: u64, is_smart: bool) -> TileStore {
         assert!(
-            tile_size >= 2 && tile_size <= 2048 && (tile_size as f64).log2().fract() == 0.0,
+            (2..=2048).contains(&tile_size) && (tile_size as f64).log2().fract() == 0.0,
             "tile size {tile_size} is invalid"
         );
-        todo!()
+        if !is_smart {
+            println!("size {tile_size}: fast");
+            TileStore::Fast(FastStore {
+                inner: Vec::with_capacity(length as usize),
+            })
+        } else {
+            println!("size {tile_size}: smart");
+            TileStore::Smart(SmartStore {
+                inner: HashMap::with_hasher(FxBuildHasher),
+            })
+        }
     }
 }

@@ -53,6 +53,13 @@ impl Tile {
             Tile::Syn(syn_tile) => syn_tile.average_colour,
         }
     }
+
+    pub(crate) fn frame_count(&self) -> u64 {
+        match self {
+            Tile::Vid(vid_tile) => (vid_tile.end_frame_index - vid_tile.start_frame_index) as u64,
+            _ => 1,
+        }
+    }
 }
 
 pub(crate) fn load_tiles(path: &Utf8PathBuf) -> anyhow::Result<Vec<Tile>> {

@@ -24,7 +24,7 @@ pub(crate) enum Mosaic {
         tiles: Arc<[Tile]>,
         ///array containing the unique tiles indices that are used to compose the final image (used for sizing page table, streaming heurestics, etc.)
         unique_matches: Arc<[MatchIndex]>,
-        ///array of len(unique_matches) where index = MatchIndex and value = DenseIndex (reduced address space to just the tiles used in this mosaic)
+        ///array of len(tiles) where index = MatchIndex and value = DenseIndex (reduced address space to just the tiles used in this mosaic)
         dense_map: Arc<[DenseIndex]>,
         ///array of len(source.width*source.height) of all match indices mapped through dense_map
         dense_matches: Arc<[DenseIndex]>,
@@ -108,6 +108,20 @@ impl Mosaic {
     pub(crate) fn tiles(&self) -> Arc<[Tile]> {
         match self {
             Mosaic::StaticMosaic { tiles, .. } => tiles.clone(),
+            Mosaic::DynamicMosaic => todo!(),
+        }
+    }
+
+    pub(crate) fn total_frames(&self) -> u64 {
+        match self {
+            Mosaic::StaticMosaic {
+                unique_matches,
+                tiles,
+                ..
+            } => unique_matches
+                .iter()
+                .map(|mi| tiles[mi.0 as usize].frame_count())
+                .sum(),
             Mosaic::DynamicMosaic => todo!(),
         }
     }

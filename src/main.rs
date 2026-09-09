@@ -76,7 +76,17 @@ impl ApplicationHandler for App {
             (mosaic, renderer)
         });
         let mut streamer = benchmark("initialising streamer", || {
-            Streamer::initialise(&renderer.device, &mut renderer.queue, &mosaic)
+            Streamer::initialise(
+                &renderer.device,
+                &mut renderer.queue,
+                &mosaic,
+                window
+                    .current_monitor()
+                    .expect("Can't detect current screen size")
+                    .size(),
+                mosaic.total_frames(),
+                (mosaic.total_frames() as f64 / mosaic.tiles().len() as f64).ceil() as u64,
+            )
         });
         let camera = AppCameraWrapper::initialise(
             &renderer.device,

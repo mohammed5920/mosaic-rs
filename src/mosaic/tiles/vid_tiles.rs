@@ -40,10 +40,10 @@ enum CacheEvaluationResult {
 
 pub(crate) struct VidTile {
     pub(crate) average_colour: [u8; 3],
+    pub(crate) start_frame_index: u32,
+    pub(crate) end_frame_index: u32,
     //reference counted string because many tiles can come from the same video
     source_path: Arc<str>,
-    start_frame_index: u32,
-    end_frame_index: u32,
 }
 
 //

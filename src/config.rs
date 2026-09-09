@@ -27,7 +27,8 @@ pub(crate) struct AppConfig {
     pub(crate) hard_seek_threshold: NonZero<u64>,
     pub(crate) zoom_steps_per_octave: NonZero<u64>,
     pub(crate) tile_base_res: NonZero<u64>,
-    //can be zero to load every single video frame as a tile
+    pub(crate) prefetch_multiplier: NonZero<u64>,
+    ///can be zero to load every single video frame as a tile
     pub(crate) difference_threshold: u64,
 }
 
@@ -43,8 +44,8 @@ pub(crate) fn load_config() -> AppConfig {
         Err(e) => {
             eprintln!("{e} - loading default");
             let config = AppConfig {
-                source_path: Utf8PathBuf::from_str("test/test.jpg").unwrap(),
-                tile_path: Utf8PathBuf::from_str("test/vid_tiles").unwrap(),
+                source_path: Utf8PathBuf::from_str("test/test2.jpg").unwrap(),
+                tile_path: Utf8PathBuf::from_str("test/pic_tiles").unwrap(),
                 cache_path: Utf8PathBuf::from_str("cache").unwrap(),
 
                 is_vsync: true,
@@ -53,6 +54,7 @@ pub(crate) fn load_config() -> AppConfig {
 
                 synthetic_tile_count: None,
                 difference_threshold: 300,
+                prefetch_multiplier: NonZero::new(4).unwrap(),
                 hard_seek_threshold: NonZero::new(4).unwrap(),
                 zoom_steps_per_octave: NonZero::new(30).unwrap(),
                 tile_base_res: NonZero::new(64).unwrap(),

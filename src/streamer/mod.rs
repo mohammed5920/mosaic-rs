@@ -1,7 +1,13 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
+
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHasher};
+use sysinfo::{MemoryRefreshKind, RefreshKind, System};
+use winit::dpi::PhysicalSize;
 
 use crate::{
+    config::CONFIG,
     mosaic::{Mosaic, tiles::Tile},
+    streamer::tile_store::{FastStore, TileStore},
     types::DenseIndex,
 };
 
@@ -19,6 +25,9 @@ pub(crate) struct Streamer {
     mosaic_texture: wgpu::Texture,
     palette_texture: wgpu::Texture,
     tiles: Arc<[Tile]>,
+    stores: FxHashMap<u64, TileStore>,
+    res_limit: u64,
+    fast_limit: u64,
 }
 
 impl Streamer {
@@ -26,8 +35,46 @@ impl Streamer {
         device: &wgpu::Device,
         queue: &mut wgpu::Queue,
         mosaic: &Mosaic,
+        display_res: PhysicalSize<u32>,
+        total_frames: u64,
+        mean_tile_len: u64,
     ) -> Self {
-        let tiles = mosaic.tiles();
+        // partition the stores using the same python strategy
+        let res_limit = 2u64.pow(
+            (display_res.width.min(display_res.height) as f64)
+                .log2()
+                .floor() as u32,
+        );
+        //size of 2 arrays at current size + tile dictionary at 4x(default) the screen resolution * avg no. of frames per tile
+        let guess_ram_usage = |dim: f64| {
+            (2.0 * dim * dim * total_frames as f64 * 1.5
+                + CONFIG.prefetch_multiplier.get() as f64
+                    * mean_tile_len as f64
+                    * display_res.width as f64
+                    * display_res.height as f64
+                    * 1.5)
+                .ceil() as i64
+        };
+
+        let mut available_bytes = System::new_with_specifics(
+            RefreshKind::nothing().with_memory(MemoryRefreshKind::nothing().with_ram()),
+        )
+        .free_memory() as i64;
+    
+        let mut tile_stores = HashMap::<u64, TileStore, _>::with_hasher(FxBuildHasher);
+        let mut fast_limit = 1u64;
+        for exponent in 1u32..(res_limit as f64).log2() as u32 + 1 {
+            let raised = 2u64.pow(exponent);
+            let guessed = guess_ram_usage(raised as f64);
+            if available_bytes - guessed >= 0 {
+                tile_stores.insert(raised, TileStore::new(raised, total_frames, false));
+                available_bytes -=
+                    (raised as f64 * raised as f64 * 1.5 * total_frames as f64).ceil() as i64;
+                fast_limit = raised;
+            } else {
+                tile_stores.insert(raised, TileStore::new(raised, total_frames, true));
+            }
+        }
 
         //create the mosaic texture
         let mosaic_texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -101,13 +148,16 @@ impl Streamer {
                 depth_or_array_layers: 1,
             },
         );
-
+        let tiles = mosaic.tiles();
         Self {
             mosaic_texture,
             mosaic_view,
             palette_texture,
             palette_view,
             tiles,
+            stores: tile_stores,
+            res_limit,
+            fast_limit,
         }
     }
 
