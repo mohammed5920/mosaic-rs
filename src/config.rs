@@ -28,6 +28,7 @@ pub(crate) struct AppConfig {
     pub(crate) zoom_steps_per_octave: NonZero<u64>,
     pub(crate) tile_base_res: NonZero<u64>,
     pub(crate) prefetch_multiplier: NonZero<u64>,
+    pub(crate) ram_percent: u64,
     ///can be zero to load every single video frame as a tile
     pub(crate) difference_threshold: u64,
 }
@@ -39,7 +40,7 @@ pub(crate) fn load_config() -> AppConfig {
             serde_json::from_str::<AppConfig>(&s).map_err(|e| format!("error parsing config: {e}"))
         });
 
-    match config {
+    let config = match config {
         Ok(config) => config,
         Err(e) => {
             eprintln!("{e} - loading default");
@@ -54,6 +55,7 @@ pub(crate) fn load_config() -> AppConfig {
 
                 synthetic_tile_count: None,
                 difference_threshold: 300,
+                ram_percent: 75,
                 prefetch_multiplier: NonZero::new(4).unwrap(),
                 hard_seek_threshold: NonZero::new(4).unwrap(),
                 zoom_steps_per_octave: NonZero::new(30).unwrap(),
@@ -64,5 +66,10 @@ pub(crate) fn load_config() -> AppConfig {
             serde_json::to_writer_pretty(writer, &config).expect("could not write config");
             config
         }
-    }
+    };
+
+    assert!(config.synthetic_tile_count.is_none_or(|c| c.get() <= 16_777_216), "synthetic_tile_count must be <= 16_777_216");
+    assert!((config.prefetch_multiplier.get() as f64).log2().fract() == 0.0, "prefetch_multiplier must be a power of 2");
+    assert!(config.ram_percent <= 100, "cannot use more than 100% of free RAM (sadly)");
+    config
 }

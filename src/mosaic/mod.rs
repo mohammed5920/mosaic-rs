@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{rc::Rc, sync::Arc};
 
 use camino::Utf8PathBuf;
 use rayon::slice::ParallelSliceMut;
@@ -122,6 +122,27 @@ impl Mosaic {
                 .iter()
                 .map(|mi| tiles[mi.0 as usize].frame_count())
                 .sum(),
+            Mosaic::DynamicMosaic => todo!(),
+        }
+    }
+
+    pub(crate) fn generate_palette(&self) -> Rc<[[u8; 4]]> {
+        match self {
+            Mosaic::StaticMosaic {
+                unique_matches,
+                dense_map,
+                tiles,
+                ..
+            } => {
+                let padded_len = (unique_matches.len() as f64).sqrt().ceil().powi(2) as usize;
+                let mut res = Vec::with_capacity(padded_len);
+                res.extend((0..padded_len).map(|_| [0u8; 4]));
+                for match_index in unique_matches.iter() {
+                    let [r, g, b] = tiles[match_index.0 as usize].average_colour();
+                    res[dense_map[match_index.0 as usize].0 as usize] = [r, g, b, 255];
+                }
+                res.into()
+            }
             Mosaic::DynamicMosaic => todo!(),
         }
     }

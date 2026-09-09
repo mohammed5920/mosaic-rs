@@ -1,13 +1,13 @@
 use std::{collections::HashMap, sync::Arc};
 
-use rustc_hash::{FxBuildHasher, FxHashMap, FxHasher};
+use rustc_hash::{FxBuildHasher, FxHashMap};
 use sysinfo::{MemoryRefreshKind, RefreshKind, System};
 use winit::dpi::PhysicalSize;
 
 use crate::{
     config::CONFIG,
     mosaic::{Mosaic, tiles::Tile},
-    streamer::tile_store::{FastStore, TileStore},
+    streamer::tile_store::TileStore,
     types::DenseIndex,
 };
 
@@ -56,10 +56,10 @@ impl Streamer {
                 .ceil() as i64
         };
 
-        let mut available_bytes = System::new_with_specifics(
+        let mut available_bytes = (System::new_with_specifics(
             RefreshKind::nothing().with_memory(MemoryRefreshKind::nothing().with_ram()),
         )
-        .free_memory() as i64;
+        .free_memory() as f64 * (CONFIG.ram_percent as f64 / 100.0)) as i64;
     
         let mut tile_stores = HashMap::<u64, TileStore, _>::with_hasher(FxBuildHasher);
         let mut fast_limit = 1u64;
@@ -93,25 +93,8 @@ impl Streamer {
         });
         let mosaic_view = mosaic_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        //create & write the palette texture
-        let palette_raw = match mosaic {
-            Mosaic::StaticMosaic {
-                unique_matches,
-                dense_map,
-                tiles,
-                ..
-            } => {
-                let padded_len = (unique_matches.len() as f64).sqrt().ceil().powi(2) as usize;
-                let mut res = Vec::with_capacity(padded_len);
-                res.extend((0..padded_len).map(|_| [0u8; 4]));
-                for match_index in unique_matches.iter() {
-                    let [r, g, b] = tiles[match_index.0 as usize].average_colour();
-                    res[dense_map[match_index.0 as usize].0 as usize] = [r, g, b, 255];
-                }
-                res
-            }
-            Mosaic::DynamicMosaic => todo!(),
-        };
+        //create the palette texture
+        let palette_raw = mosaic.generate_palette();
         let palette_dim = (palette_raw.len() as f64).sqrt() as u32;
         let palette_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("saic_Palette Texture"),
@@ -129,6 +112,7 @@ impl Streamer {
         });
         let palette_view = palette_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
+        //also write the palette texture
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &palette_texture,
