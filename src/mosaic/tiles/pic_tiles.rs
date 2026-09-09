@@ -47,8 +47,12 @@ impl PicTile {
         let res = match ImageReader::open(&path)
             .map_err(|e| format!("Error opening {path} - {e}"))
             .and_then(|img| {
-                img.decode()
-                    .map_err(|e| format!("Error decoding {path} - {e}"))
+                img.with_guessed_format()
+                    .map_err(|e| format!("Error guessing {path} - {e}"))
+                    .and_then(|g| {
+                        g.decode()
+                            .map_err(|e| format!("Error decoding {path} - {e}"))
+                    })
             }) {
             Ok(decoded) => CachedPicTile::Valid(PicTile {
                 average_colour: calc_average_colour(&decoded.to_rgb8().into_raw()),
