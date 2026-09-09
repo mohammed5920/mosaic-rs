@@ -18,7 +18,7 @@ impl Source {
     pub(crate) fn open(path: &Utf8PathBuf) -> anyhow::Result<Source> {
         match check_supported_extension(path) {
             MediaType::Pic => {
-                Ok(Source::Pic(PicSource::open(path).with_context(|| {
+                Ok(Source::Pic(PicSource::new(path).with_context(|| {
                     format!("Error while opening {path} as source")
                 })?))
             }

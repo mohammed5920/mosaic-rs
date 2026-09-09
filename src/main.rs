@@ -14,7 +14,7 @@ use winit::{
 
 use crate::{
     camera::AppCameraWrapper,
-    config::{CONFIG, load_config},
+    config::CONFIG,
     mosaic::Mosaic,
     renderer::Renderer,
     streamer::Streamer,
@@ -64,31 +64,31 @@ impl ApplicationHandler for App {
                     .unwrap(),
             )
         });
-        let (mut mosaic, mut renderer) = thread::scope(|s| {
+        let (mosaic, mut renderer) = thread::scope(|s| {
             let mosaic_fut = s.spawn(|| Mosaic::create(&CONFIG.source_path, &CONFIG.tile_path));
             let renderer = benchmark("initialising GPU", || {
-                pollster::block_on(Renderer::initialise(window.clone()))
+                pollster::block_on(Renderer::new(window.clone()))
             });
             let mosaic = mosaic_fut
                 .join()
-                .expect("Could not create mosaic")
-                .expect("Could not create mosaic");
+                .expect("could not create mosaic")
+                .expect("could not create mosaic");
             (mosaic, renderer)
         });
-        let mut streamer = benchmark("initialising streamer", || {
-            Streamer::initialise(
+        let streamer = benchmark("initialising streamer", || {
+            Streamer::new(
                 &renderer.device,
                 &mut renderer.queue,
                 &mosaic,
                 window
                     .current_monitor()
-                    .expect("Can't detect current screen size")
+                    .expect("can't detect current screen size")
                     .size(),
-                mosaic.total_frames(),
-                (mosaic.total_frames() as f64 / mosaic.tiles().len() as f64).ceil() as u64,
+                mosaic.total_tile_frames(),
+                (mosaic.total_tile_frames() as f64 / mosaic.tiles().len() as f64).ceil() as u64,
             )
         });
-        let camera = AppCameraWrapper::initialise(
+        let camera = AppCameraWrapper::new(
             &renderer.device,
             renderer.queue.clone(),
             (mosaic.width() as f32, mosaic.height() as f32),
@@ -97,12 +97,8 @@ impl ApplicationHandler for App {
                 window.inner_size().height as f32,
             ),
         );
-        renderer.bind_resources(
-            &camera.buffer,
-            streamer.mosaic_view.clone(),
-            streamer.palette_view.clone(),
-        );
-        streamer.update(&mut renderer.queue, &mosaic.read_frame());
+        renderer.bind_resources(&camera.buffer, streamer.palette_view.clone(), &mosaic);
+        renderer.update_mosaic_texture(&mosaic.dense_matches());
 
         if CONFIG.end_after_init {
             exit(0);
@@ -137,7 +133,9 @@ impl ApplicationHandler for App {
                     if let Some((ox, oy)) = self.state().input.clicked_cursor_pos {
                         let (nx, ny) = self.state().input.cursor_pos;
                         let (dx, dy) = (nx - ox, ny - oy);
-                        self.state().camera.pan((-dx as f32, -dy as f32));
+                        let s = self.state();
+                        s.camera.pan((-dx as f32, -dy as f32));
+                        s.camera.calc_visible_mosaic_bounding_box(&s.mosaic);
                     }
                     self.state().input.clicked_cursor_pos = Some(self.state().input.cursor_pos);
                 } else {
@@ -188,9 +186,8 @@ impl ApplicationHandler for App {
 
             //NOTE: Renderer
             WindowEvent::RedrawRequested => {
-                // let frame_matches = self.state().mosaic.read_frame();
                 let s = self.state();
-                // s.streamer.update(&mut s.renderer.queue, &frame_matches);
+                s.streamer.stream();
                 s.renderer.render();
                 s.window.request_redraw();
             }
@@ -207,12 +204,11 @@ impl ApplicationHandler for App {
 
 pub(crate) fn main() {
     set_panic_hook();
-    load_config();
-    ffmpeg::init().expect("Could not initialise FFMPEG");
+    ffmpeg::init().expect("could not initialise FFMPEG");
     let event_loop: EventLoop<()> = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Wait);
     let mut app = App(None);
     event_loop
         .run_app(&mut app)
-        .expect("Error running main loop")
+        .expect("error running main loop")
 }

@@ -22,6 +22,8 @@ pub(crate) struct AppConfig {
     pub(crate) is_vsync: bool,
     ///for profiling initialisation
     pub(crate) end_after_init: bool,
+    ///don't make the tiles move
+    pub(crate) force_static_tiles: bool,
 
     pub(crate) synthetic_tile_count: Option<NonZero<u64>>,
     pub(crate) hard_seek_threshold: NonZero<u64>,
@@ -51,6 +53,7 @@ pub(crate) fn load_config() -> AppConfig {
 
                 is_vsync: true,
                 end_after_init: false,
+                force_static_tiles: false,
                 backend: wgpu::Backend::Vulkan,
 
                 synthetic_tile_count: None,

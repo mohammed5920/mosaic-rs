@@ -84,7 +84,7 @@ pub(crate) fn load_tiles(path: &Utf8PathBuf) -> anyhow::Result<Vec<Tile>> {
 
     //process images first and then videos so that filtering for duplicates prioritises images first
     res.par_extend(pics.into_par_iter().filter_map(|file_path| {
-        PicTile::open(file_path.clone())
+        PicTile::new(file_path.clone())
             .inspect_err(|e| eprintln!("{file_path} - {e:?}"))
             .ok()
             .map(Tile::Pic)

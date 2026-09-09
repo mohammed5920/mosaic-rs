@@ -20,7 +20,7 @@ enum CachedPicTile {
 }
 
 impl PicTile {
-    pub(crate) fn open(path: Utf8PathBuf) -> anyhow::Result<PicTile> {
+    pub(crate) fn new(path: Utf8PathBuf) -> anyhow::Result<PicTile> {
         let hasher = ImoHasher::new();
         let hash = hasher.sum_file(path.as_str())?;
         let mut cache_entry_path = CONFIG.cache_path.clone();

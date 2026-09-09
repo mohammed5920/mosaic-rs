@@ -2,7 +2,7 @@ use std::{fs, sync::Arc};
 
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::config::CONFIG;
+use crate::{config::CONFIG, mosaic::Mosaic, types::DenseIndex};
 
 pub(crate) struct Renderer {
     ///the gpu
@@ -17,12 +17,14 @@ pub(crate) struct Renderer {
     ///pipeline for the main mosaic shaders
     pipeline: wgpu::RenderPipeline,
 
+    mosaic_texture: Option<wgpu::Texture>,
+    mosaic_view: Option<wgpu::TextureView>,
     rendering_bind_group: Option<wgpu::BindGroup>,
 }
 
 impl Renderer {
     //NOTE: wgpu initialiser
-    pub(crate) async fn initialise(window: Arc<Window>) -> Self {
+    pub(crate) async fn new(window: Arc<Window>) -> Self {
         let instance: wgpu::Instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: CONFIG.backend.into(),
             flags: Default::default(),
@@ -126,15 +128,34 @@ impl Renderer {
             surface_config: config,
             pipeline,
             rendering_bind_group: None,
+            mosaic_texture: None,
+            mosaic_view: None,
         }
     }
 
     pub(crate) fn bind_resources(
         &mut self,
         camera_buffer: &wgpu::Buffer,
-        mosaic_view: wgpu::TextureView,
         palette_view: wgpu::TextureView,
+        mosaic: &Mosaic,
     ) {
+        //create the mosaic texture
+        let mosaic_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("saic_Mosaic Texture"),
+            size: wgpu::Extent3d {
+                width: mosaic.width() as u32,
+                height: mosaic.height() as u32,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R32Uint,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let mosaic_view = mosaic_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
         self.rendering_bind_group =
             Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("saic_Streaming Bind Group"),
@@ -153,7 +174,37 @@ impl Renderer {
                         resource: wgpu::BindingResource::TextureView(&palette_view),
                     },
                 ],
-            }))
+            }));
+
+        self.mosaic_texture = Some(mosaic_texture);
+        self.mosaic_view = Some(mosaic_view);
+    }
+
+    ///update the gpu side mosaic with the current frame (called once for static mosaics, every video frame for dynamic mosaics)
+    pub(crate) fn update_mosaic_texture(&mut self, frame_matches: &[DenseIndex]) {
+        let m_tex = self
+            .mosaic_texture
+            .as_ref()
+            .expect("mosaic texture should be initialised");
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: m_tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            bytemuck::cast_slice(frame_matches),
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * m_tex.width()),
+                rows_per_image: None,
+            },
+            wgpu::Extent3d {
+                width: m_tex.width(),
+                height: m_tex.height(),
+                depth_or_array_layers: 1,
+            },
+        );
     }
 
     pub(crate) fn resize(&mut self, size: PhysicalSize<u32>) {

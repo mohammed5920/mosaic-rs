@@ -3,6 +3,8 @@ pub(crate) mod vid_util;
 
 use std::time::Instant;
 
+use rayon::prelude::*;
+
 pub(crate) fn benchmark<T>(label: &str, function: impl FnOnce() -> T) -> T {
     let start = Instant::now();
     let res = function();
@@ -16,6 +18,12 @@ pub(crate) fn benchmark<T>(label: &str, function: impl FnOnce() -> T) -> T {
         0, duration
     );
     res
+}
+
+///like np.unique
+pub(crate) fn vec_unique<T: Send + Ord>(input: &mut Vec<T>) {
+    input.par_sort_unstable();
+    input.dedup();
 }
 
 pub(crate) fn colour_to_key(rgb: [u8; 3]) -> usize {

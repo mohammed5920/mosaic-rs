@@ -43,7 +43,7 @@ pub(crate) struct VideoCapture {
 }
 
 impl VideoCapture {
-    pub(crate) fn open(
+    pub(crate) fn new(
         path: Utf8PathBuf,
         cropped_square_size: Option<u64>,
     ) -> Result<Self, ffmpeg::Error> {

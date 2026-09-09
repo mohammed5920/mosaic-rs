@@ -1,7 +1,7 @@
 use wgpu::util::DeviceExt as _;
 use winit::dpi::PhysicalSize;
 
-use crate::config::CONFIG;
+use crate::{config::CONFIG, mosaic::Mosaic};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -20,8 +20,32 @@ pub(crate) struct AppCameraWrapper {
     queue: wgpu::Queue,
 }
 
+impl AppCamera {
+    ///[xmin, ymin], [xmax, ymax]
+    pub(crate) fn visible_world_bounds(&self) -> ([i64; 2], [i64; 2]) {
+        let zoom = self.zoom_factor();
+        let half_viewport_world = [
+            (self.viewport[0] * 0.5) / zoom,
+            (self.viewport[1] * 0.5) / zoom,
+        ];
+        let min = [
+            (self.center[0] - half_viewport_world[0]).floor() as i64,
+            (self.center[1] - half_viewport_world[1]).floor() as i64,
+        ];
+        let max = [
+            (self.center[0] + half_viewport_world[0]).ceil() as i64,
+            (self.center[1] + half_viewport_world[1]).ceil() as i64,
+        ];
+        (min, max)
+    }
+
+    fn zoom_factor(&self) -> f32 {
+        2f32.powf(self.zoom_steps as f32 / self.steps_per_octave as f32)
+    }
+}
+
 impl AppCameraWrapper {
-    pub(crate) fn initialise(
+    pub(crate) fn new(
         device: &wgpu::Device,
         queue: wgpu::Queue,
         mosaic_dims: (f32, f32),
@@ -44,10 +68,6 @@ impl AppCameraWrapper {
         }
     }
 
-    fn zoom_factor(&self) -> f32 {
-        2f32.powf(self.inner.zoom_steps as f32 / self.inner.steps_per_octave as f32)
-    }
-
     fn sync(&self) {
         self.queue
             .write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[self.inner]));
@@ -60,13 +80,36 @@ impl AppCameraWrapper {
 
     pub(crate) fn pan(&mut self, deltas: (f32, f32)) {
         let (x, y) = deltas;
-        self.inner.center[0] += x / self.zoom_factor();
-        self.inner.center[1] += y / self.zoom_factor();
+        self.inner.center[0] += x / self.inner.zoom_factor();
+        self.inner.center[1] += y / self.inner.zoom_factor();
         self.sync();
     }
 
     pub(crate) fn zoom(&mut self, delta: i32) {
         self.inner.zoom_steps += delta;
         self.sync();
+    }
+
+    ///get the bounding box in mosaic coords of what the camera is currently looking at
+    ///
+    ///None if camera is looking entirely outside the mosaic
+    pub(crate) fn calc_visible_mosaic_bounding_box(
+        &self,
+        mosaic: &Mosaic,
+    ) -> Option<([i64; 2], [i64; 2])> {
+        let (mmin, mmax) = (
+            [0i64, 0i64],
+            [mosaic.width() as i64, mosaic.height() as i64],
+        );
+        if self.inner.zoom_steps <= 0 {
+            return Some((mmin, mmax));
+        };
+        let (vmin, vmax) = self.inner.visible_world_bounds();
+        let min = [vmin[0].max(mmin[0]), vmin[1].max(mmin[1])];
+        let max = [vmax[0].min(mmax[0]).max(0), vmax[1].min(mmax[1]).max(0)];
+        if min[0] >= max[0] || min[1] >= max[1] {
+            return None;
+        };
+        Some((min, max))
     }
 }

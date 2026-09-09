@@ -9,8 +9,11 @@ pub(crate) struct PicSource {
 }
 
 impl PicSource {
-    pub(crate) fn open(path: impl AsRef<Path>) -> ImageResult<PicSource> {
-        let img = ImageReader::open(path)?.decode()?.into_rgb8();
+    pub(crate) fn new(path: impl AsRef<Path>) -> ImageResult<PicSource> {
+        let img = ImageReader::open(path)?
+            .with_guessed_format()?
+            .decode()?
+            .into_rgb8();
         Ok(PicSource {
             width: img.width().into(),
             height: img.height().into(),

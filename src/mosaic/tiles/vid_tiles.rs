@@ -132,7 +132,7 @@ fn process_video_for_vidtiles(source_path: &Utf8PathBuf) -> MaybeVidTilesCacheEn
         Ok(true) => {}
     }
 
-    let mut cap = match VideoCapture::open(source_path.clone(), Some(CONFIG.tile_base_res.get())) {
+    let mut cap = match VideoCapture::new(source_path.clone(), Some(CONFIG.tile_base_res.get())) {
         Ok(cap) => cap,
         Err(e) => return uncacheable(format!("{e} while opening as capture")),
     };

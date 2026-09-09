@@ -4,21 +4,21 @@ use kiddo::{ImmutableKdTree, dist::SquaredEuclidean};
 
 use crate::{mosaic::tiles::Tile, types::MatchIndex, util::colour_to_key};
 
-pub(crate) struct Matchmaker {
+pub(crate) struct MatchMaker {
     kiddie: ImmutableKdTree<u8, 3>,
     ///with capacity 16_777_216
     colour_map: Vec<AtomicI32>,
 }
 
-impl Matchmaker {
-    pub(crate) fn from_tiles(tiles: &[Tile]) -> Matchmaker {
+impl MatchMaker {
+    pub(crate) fn new(tiles: &[Tile]) -> MatchMaker {
         assert!(
             tiles.len() <= 16_777_216,
             "max no. of tiles is 16_777_216 (RGB colour space)"
         );
         let mut colour_map = Vec::with_capacity(16_777_216);
         colour_map.extend((0..16_777_216).map(|_| AtomicI32::new(-1)));
-        Matchmaker {
+        MatchMaker {
             kiddie: ImmutableKdTree::new_from_slice(
                 &tiles.iter().map(|t| t.average_colour()).collect::<Vec<_>>(),
             )
