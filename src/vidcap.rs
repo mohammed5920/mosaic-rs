@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::rc::Rc;
 
 use camino::Utf8PathBuf;
 use ffmpeg_next as ffmpeg;
@@ -14,15 +14,15 @@ pub(crate) struct NvVideoFrame {
     width: u64,
     height: u64,
     frame_index: i64,
-    y: Arc<[u8]>,
-    cb_cr: Arc<[u8]>,
+    y: Rc<[u8]>,
+    cb_cr: Rc<[u8]>,
 }
 
 pub(crate) struct RgbVideoFrame {
     width: u64,
     height: u64,
     frame_index: i64,
-    pub(crate) rgb: Arc<[u8]>,
+    pub(crate) rgb: Rc<[u8]>,
 }
 
 pub(crate) struct VideoCapture {

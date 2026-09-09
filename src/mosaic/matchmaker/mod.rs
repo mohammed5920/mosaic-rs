@@ -2,19 +2,13 @@ use std::sync::atomic::{AtomicI32, Ordering};
 
 use kiddo::{ImmutableKdTree, dist::SquaredEuclidean};
 
-use crate::{mosaic::tiles::Tile, util::colour_to_key};
+use crate::{mosaic::tiles::Tile, types::MatchIndex, util::colour_to_key};
 
 pub(crate) struct Matchmaker {
     kiddie: ImmutableKdTree<u8, 3>,
     ///with capacity 16_777_216
     colour_map: Vec<AtomicI32>,
 }
-
-#[repr(C)]
-#[derive(
-    Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, bytemuck::Pod, bytemuck::Zeroable,
-)]
-pub(crate) struct MatchIndex(pub(crate) i32);
 
 impl Matchmaker {
     pub(crate) fn from_tiles(tiles: &[Tile]) -> Matchmaker {

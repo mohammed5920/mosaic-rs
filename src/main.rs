@@ -2,7 +2,7 @@
 #[allow(clippy::pedantic)]
 use ffmpeg_next as ffmpeg;
 
-use std::{sync::Arc, thread};
+use std::{process::exit, sync::Arc, thread};
 
 use winit::{
     application::ApplicationHandler,
@@ -26,6 +26,7 @@ mod config;
 mod mosaic;
 mod renderer;
 mod streamer;
+mod types;
 mod util;
 mod vidcap;
 
@@ -92,6 +93,10 @@ impl ApplicationHandler for App {
             streamer.palette_view.clone(),
         );
         streamer.update(&mut renderer.queue, &mosaic.read_frame());
+
+        if CONFIG.end_after_init {
+            exit(0);
+        }
 
         self.0 = Some(AppState {
             streamer,

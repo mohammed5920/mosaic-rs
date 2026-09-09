@@ -6,23 +6,17 @@ use rayon::slice::ParallelSliceMut;
 use crate::{
     config::CONFIG,
     mosaic::{
-        matchmaker::{MatchIndex, Matchmaker},
+        matchmaker::Matchmaker,
         media_source::{Source, pic_source::PicSource},
         tiles::{Tile, load_tiles, syn_tiles::load_synthetic_tiles},
     },
+    types::{DenseIndex, MatchIndex},
     util::benchmark,
 };
 
 pub(crate) mod matchmaker;
 pub(crate) mod media_source;
 pub(crate) mod tiles;
-
-///for dynamic mosaics this is the same as the MatchIndex
-#[repr(C)]
-#[derive(
-    Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, bytemuck::Pod, bytemuck::Zeroable,
-)]
-pub(crate) struct DenseIndex(pub(crate) i32);
 
 pub(crate) enum Mosaic {
     StaticMosaic {

@@ -9,7 +9,6 @@ use rayon::prelude::*;
 use rustc_hash::FxBuildHasher;
 
 use crate::{
-    config::CONFIG,
     mosaic::tiles::{
         pic_tiles::PicTile,
         syn_tiles::SynTile,
@@ -77,15 +76,10 @@ pub(crate) fn load_tiles(path: &Utf8PathBuf) -> anyhow::Result<Vec<Tile>> {
     res.par_extend(
         vids.into_par_iter()
             .filter_map(|file_path| {
-                vid_tiles_from_path(
-                    file_path.clone(),
-                    CONFIG.cache_path.clone(),
-                    CONFIG.tile_base_res.get(),
-                    CONFIG.difference_threshold,
-                )
-                .inspect(|v| println!("{file_path} - {} tiles", v.len()))
-                .inspect_err(|e| eprintln!("{file_path} - {e:?}"))
-                .ok()
+                vid_tiles_from_path(file_path.clone())
+                    .inspect(|v| println!("{file_path} - {} tiles", v.len()))
+                    .inspect_err(|e| eprintln!("{file_path} - {e:?}"))
+                    .ok()
             })
             .flatten()
             .map(Tile::Vid),
@@ -93,13 +87,15 @@ pub(crate) fn load_tiles(path: &Utf8PathBuf) -> anyhow::Result<Vec<Tile>> {
 
     let mut colour_key_set = HashSet::with_hasher(FxBuildHasher);
     let prev_len = res.len();
-    let res: Vec<Tile> = res
+    let mut res: Vec<Tile> = res
         .into_iter()
         .filter(|t| {
             let key = colour_to_key(t.average_colour());
             colour_key_set.insert(key)
         })
         .collect();
+    //cheap enough and makes the renderdoc capture look a lot more coherent
+    res.par_sort_unstable_by_key(|t| colour_to_key(t.average_colour()));
 
     println!(
         "filtered {}% of tiles ({}/{prev_len} tiles, {} left)",

@@ -20,6 +20,8 @@ pub(crate) struct AppConfig {
 
     pub(crate) backend: wgpu::Backend,
     pub(crate) is_vsync: bool,
+    ///for profiling initialisation
+    pub(crate) end_after_init: bool,
 
     pub(crate) synthetic_tile_count: Option<NonZero<u64>>,
     pub(crate) hard_seek_threshold: NonZero<u64>,
@@ -46,6 +48,7 @@ pub(crate) fn load_config() -> AppConfig {
                 cache_path: Utf8PathBuf::from_str("cache").unwrap(),
 
                 is_vsync: true,
+                end_after_init: false,
                 backend: wgpu::Backend::Vulkan,
 
                 synthetic_tile_count: None,

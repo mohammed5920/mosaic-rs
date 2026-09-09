@@ -1,6 +1,11 @@
 use std::sync::Arc;
 
-use crate::mosaic::{DenseIndex, Mosaic, tiles::Tile};
+use crate::{
+    mosaic::{Mosaic, tiles::Tile},
+    types::DenseIndex,
+};
+
+mod tile_store;
 
 // palette -> static
 // mosaic texture -> every video frame / static
