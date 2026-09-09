@@ -56,7 +56,16 @@ impl Tile {
 
     pub(crate) fn frame_count(&self) -> u64 {
         match self {
-            Tile::Vid(vid_tile) => (vid_tile.end_frame_index - vid_tile.start_frame_index) as u64,
+            Tile::Vid(vid_tile) => {
+                debug_assert!(
+                    (vid_tile.end_frame_index as i64 - vid_tile.start_frame_index as i64) >= 0,
+                    "{} - starts at {} but ends at {}",
+                    vid_tile.source_path,
+                    vid_tile.start_frame_index,
+                    vid_tile.end_frame_index
+                );
+                (vid_tile.end_frame_index - vid_tile.start_frame_index) as u64
+            }
             _ => 1,
         }
     }
@@ -80,17 +89,21 @@ pub(crate) fn load_tiles(path: &Utf8PathBuf) -> anyhow::Result<Vec<Tile>> {
             .ok()
             .map(Tile::Pic)
     }));
-    res.par_extend(
-        vids.into_par_iter()
-            .filter_map(|file_path| {
-                vid_tiles_from_path(file_path.clone())
-                    .inspect(|v| println!("{file_path} - {} tiles", v.len()))
-                    .inspect_err(|e| eprintln!("{file_path} - {e:?}"))
-                    .ok()
-            })
-            .flatten()
-            .map(Tile::Vid),
-    );
+    let mut vids: Vec<_> = vids
+        .into_par_iter()
+        .filter_map(|file_path| {
+            vid_tiles_from_path(file_path.clone())
+                .inspect(|v| println!("{file_path} - {} tiles", v.len()))
+                .inspect_err(|e| eprintln!("{file_path} - {e:?}"))
+                .ok()
+        })
+        .flatten()
+        .map(Tile::Vid)
+        .collect();
+
+    //prioritising filtering videos that are longer
+    vids.par_sort_unstable_by_key(|t| t.frame_count());
+    res.append(&mut vids);
 
     let mut colour_key_set = HashSet::with_hasher(FxBuildHasher);
     let prev_len = res.len();
@@ -105,10 +118,11 @@ pub(crate) fn load_tiles(path: &Utf8PathBuf) -> anyhow::Result<Vec<Tile>> {
     res.par_sort_unstable_by_key(|t| colour_to_key(t.average_colour()));
 
     println!(
-        "filtered {}% of tiles ({}/{prev_len} tiles, {} left)",
+        "filtered {}% of tiles ({}/{prev_len} tiles, {} tiles / {} frames left)",
         ((prev_len - res.len()) as f64 / prev_len as f64) * 100.0,
         prev_len - res.len(),
-        res.len()
+        res.len(),
+        res.iter().map(|t| t.frame_count()).sum::<u64>()
     );
 
     Ok(res)

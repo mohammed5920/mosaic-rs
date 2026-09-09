@@ -59,8 +59,9 @@ impl Streamer {
         let mut available_bytes = (System::new_with_specifics(
             RefreshKind::nothing().with_memory(MemoryRefreshKind::nothing().with_ram()),
         )
-        .free_memory() as f64 * (CONFIG.ram_percent as f64 / 100.0)) as i64;
-    
+        .free_memory() as f64
+            * (CONFIG.ram_percent as f64 / 100.0)) as i64;
+
         let mut tile_stores = HashMap::<u64, TileStore, _>::with_hasher(FxBuildHasher);
         let mut fast_limit = 1u64;
         for exponent in 1u32..(res_limit as f64).log2() as u32 + 1 {

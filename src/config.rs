@@ -68,8 +68,19 @@ pub(crate) fn load_config() -> AppConfig {
         }
     };
 
-    assert!(config.synthetic_tile_count.is_none_or(|c| c.get() <= 16_777_216), "synthetic_tile_count must be <= 16_777_216");
-    assert!((config.prefetch_multiplier.get() as f64).log2().fract() == 0.0, "prefetch_multiplier must be a power of 2");
-    assert!(config.ram_percent <= 100, "cannot use more than 100% of free RAM (sadly)");
+    assert!(
+        config
+            .synthetic_tile_count
+            .is_none_or(|c| c.get() <= 16_777_216),
+        "synthetic_tile_count must be <= 16_777_216"
+    );
+    assert!(
+        (config.prefetch_multiplier.get() as f64).log2().fract() == 0.0,
+        "prefetch_multiplier must be a power of 2"
+    );
+    assert!(
+        config.ram_percent <= 100,
+        "cannot use more than 100% of free RAM (sadly)"
+    );
     config
 }

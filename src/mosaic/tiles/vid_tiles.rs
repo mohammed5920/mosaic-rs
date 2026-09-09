@@ -41,9 +41,10 @@ enum CacheEvaluationResult {
 pub(crate) struct VidTile {
     pub(crate) average_colour: [u8; 3],
     pub(crate) start_frame_index: u32,
+    ///exclusive (this frame shouldn't be decoded as part of the tile)
     pub(crate) end_frame_index: u32,
     //reference counted string because many tiles can come from the same video
-    source_path: Arc<str>,
+    pub(crate) source_path: Arc<str>,
 }
 
 //
@@ -67,7 +68,7 @@ fn get_start_end_frame_indices(colours: &[[u8; 3]]) -> FxHashMap<usize, usize> {
     for (offset, current_colour) in colours[1..].iter().enumerate() {
         let i = offset + 1;
         if mse(last_start_colour, *current_colour) >= CONFIG.difference_threshold as u32 {
-            res.insert(last_start_index, i - 1);
+            res.insert(last_start_index, i);
             last_start_index = i;
             last_start_colour = *current_colour;
         };
