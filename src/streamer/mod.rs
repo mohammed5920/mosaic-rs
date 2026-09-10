@@ -1,16 +1,11 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::{HashMap, HashSet}, sync::Arc};
 
-use rustc_hash::{FxBuildHasher, FxHashMap};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use sysinfo::{MemoryRefreshKind, RefreshKind, System};
 use winit::dpi::PhysicalSize;
 
 use crate::{
-    camera::AppCameraWrapper,
-    config::CONFIG,
-    mosaic::{Mosaic, tiles::Tile},
-    streamer::tile_store::TileStore,
-    types::Bb,
-    util::bb_util::subtract_rect,
+    camera::AppCameraWrapper, config::CONFIG, mosaic::{Mosaic, tiles::Tile}, streamer::tile_store::TileStore, types::{Bb, DenseIndex}, util::bb_util::subtract_rect,
 };
 
 mod tile_store;
@@ -27,6 +22,7 @@ pub(crate) struct Streamer {
     stores: FxHashMap<u64, TileStore>,
     ///where index is a DenseIndex, value is refcount visible on screen
     visibility_map: Vec<u64>,
+    visibility_set: FxHashSet<DenseIndex>,
     last_frame_visible_bb: Option<Bb>,
     res_limit: u64,
     fast_limit: u64,
@@ -126,11 +122,13 @@ impl Streamer {
             res_limit,
             fast_limit,
             visibility_map: mosaic.unique_matches().iter().map(|_| 0).collect(),
+            visibility_set: HashSet::with_hasher(FxBuildHasher),
             last_frame_visible_bb: None,
         }
     }
 
     pub(crate) fn update_visibility_map(&mut self, camera: &AppCameraWrapper, mosaic: &Mosaic) {
+        if !camera.is_zoomed_in() {return;}
         let new_bb = camera.calc_visible_mosaic_bounding_box(mosaic);
         let mut new_acc = Vec::new();
         let mut old_acc = Vec::new();
@@ -160,14 +158,19 @@ impl Streamer {
                 .visibility_map
                 .get_mut(k.0 as usize)
                 .expect("index is not in visibility map (initialiser broken?)");
+            if *prev == 0 {self.visibility_set.insert(*k);}
             *prev += 1;
         }
+
         for k in old_acc.iter() {
             let prev = self
                 .visibility_map
                 .get_mut(k.0 as usize)
                 .expect("index is not in visibility map (initialiser broken?)");
+            if *prev == 1 {self.visibility_set.remove(k);}
             *prev -= 1;
         }
+
+        println!("{} in visibility_set", self.visibility_set.len())
     }
 }

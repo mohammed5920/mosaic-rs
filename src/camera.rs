@@ -90,6 +90,11 @@ impl AppCameraWrapper {
         self.sync();
     }
 
+    ///is zoomed higher than 100%?
+    pub(crate) fn is_zoomed_in(&self) -> bool {
+        self.inner.zoom_steps >= 0
+    }
+
     ///get the bounding box in mosaic coords of what the camera is currently looking at
     ///
     ///None if camera is looking entirely outside the mosaic
@@ -98,7 +103,7 @@ impl AppCameraWrapper {
             (0i64, 0i64),
             (mosaic.width() as i64, mosaic.height() as i64),
         );
-        if self.inner.zoom_steps <= 0 {
+        if !self.is_zoomed_in() {
             return Some((mmin, mmax));
         };
         let (vmin, vmax) = self.inner.visible_world_bounds();
