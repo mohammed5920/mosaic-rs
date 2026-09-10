@@ -1,13 +1,16 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use sysinfo::{MemoryRefreshKind, RefreshKind, System};
 use winit::dpi::PhysicalSize;
 
 use crate::{
+    camera::AppCameraWrapper,
     config::CONFIG,
     mosaic::{Mosaic, tiles::Tile},
     streamer::tile_store::TileStore,
+    types::{Bb, DenseIndex},
+    util::bb_util::subtract_rect,
 };
 
 mod tile_store;
@@ -20,9 +23,10 @@ mod tile_store;
 
 pub(crate) struct Streamer {
     pub(crate) palette_view: wgpu::TextureView,
-    palette_texture: wgpu::Texture,
     tiles: Arc<[Tile]>,
     stores: FxHashMap<u64, TileStore>,
+    visibility_map: FxHashMap<DenseIndex, u64>,
+    last_frame_visible_bb: Option<Bb>,
     res_limit: u64,
     fast_limit: u64,
 }
@@ -115,14 +119,65 @@ impl Streamer {
         );
         let tiles = mosaic.tiles();
         Self {
-            palette_texture,
             palette_view,
             tiles,
             stores: tile_stores,
             res_limit,
             fast_limit,
+            visibility_map: mosaic
+                .unique_matches()
+                .iter()
+                .map(|i| {
+                    (
+                        mosaic
+                            .map_sparse_to_dense(*i)
+                            .expect("unique tiles should be present in mosaic"),
+                        0u64,
+                    )
+                })
+                .collect(),
+            last_frame_visible_bb: None,
         }
     }
 
-    pub(crate) fn stream(&mut self) {}
+    pub(crate) fn update_visibility_map(&mut self, camera: &AppCameraWrapper, mosaic: &Mosaic) {
+        let new_bb = camera.calc_visible_mosaic_bounding_box(mosaic);
+        let mut new_acc = Vec::new();
+        let mut old_acc = Vec::new();
+        match (self.last_frame_visible_bb, new_bb) {
+            (None, None) => return,
+            (Some(old_bb), None) => {
+                old_acc.extend_from_slice(&mosaic.slice_bb_from_dense((old_bb.0, old_bb.1)));
+                self.last_frame_visible_bb = None;
+            }
+            (None, Some(new_bb)) => {
+                new_acc.extend_from_slice(&mosaic.slice_bb_from_dense((new_bb.0, new_bb.1)));
+                self.last_frame_visible_bb = Some(new_bb);
+            }
+            (Some(old_bb), Some(new_bb)) => {
+                for r in subtract_rect(old_bb, new_bb) {
+                    old_acc.extend_from_slice(&mosaic.slice_bb_from_dense((r.0, r.1)));
+                }
+                for r in subtract_rect(new_bb, old_bb) {
+                    new_acc.extend_from_slice(&mosaic.slice_bb_from_dense((r.0, r.1)));
+                }
+                self.last_frame_visible_bb = Some(new_bb);
+            }
+        };
+
+        for k in new_acc.iter() {
+            let prev = self
+                .visibility_map
+                .get_mut(k)
+                .expect("index is not in visibility map (is the initialiser broken?)");
+            *prev += 1;
+        }
+        for k in old_acc.iter() {
+            let prev = self
+                .visibility_map
+                .get_mut(k)
+                .expect("index is not in visibility map (is the initialiser broken?)");
+            *prev -= 1;
+        }
+    }
 }

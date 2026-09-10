@@ -1,3 +1,5 @@
+pub(crate) type Bb = ((i64, i64), (i64, i64));
+
 ///index into the vec of *total tiles*
 ///
 ///created while matching
@@ -23,6 +25,7 @@ pub(crate) struct DenseIndex(pub(crate) i32);
 ///created for the cpu-side streaming buffers
 ///
 ///for static mosaics with static tiles, this is the same as the DenseIndex
+///
 ///for dynamic mosaics, this is the same as both the MatchIndex and DenseIndex
 #[repr(C)]
 #[derive(

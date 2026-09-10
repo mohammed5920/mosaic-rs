@@ -10,7 +10,7 @@ use crate::{
         mosaic_static::StaticMosaic,
         tiles::{Tile, load_tiles, syn_tiles::load_synthetic_tiles},
     },
-    types::{DenseIndex, MatchIndex},
+    types::{Bb, DenseIndex, MatchIndex},
     util::benchmark,
 };
 
@@ -80,6 +80,42 @@ impl Mosaic {
             Mosaic::StaticMosaic(m) => m.dense_matches.clone(),
             Mosaic::DynamicMosaic => todo!(),
         }
+    }
+
+    ///map a MatchIndex to a DenseIndex if this tile was used in the mosaic (always Some for dynamic mosaics)
+    pub(crate) fn map_sparse_to_dense(&self, mi: MatchIndex) -> Option<DenseIndex> {
+        match self {
+            Mosaic::StaticMosaic(m) => m.dense_map.get(mi.0 as usize).copied(),
+            Mosaic::DynamicMosaic => Some(DenseIndex(mi.0)),
+        }
+    }
+
+    pub(crate) fn slice_bb_from_dense(&self, (start, end): Bb) -> Rc<[DenseIndex]> {
+        debug_assert!(
+            start.0 >= 0 && start.0 <= end.0 && start.1 >= 0 && start.1 <= end.1,
+            "invalid slicing coordinates (start: {start:?} - end: {end:?})"
+        );
+
+        let arr = match self {
+            Mosaic::StaticMosaic(m) => &m.dense_matches,
+            Mosaic::DynamicMosaic => todo!(),
+        };
+
+        let (start_x, start_y) = start;
+        let (end_x, end_y) = end;
+        let col_offset = start_x;
+        let col_len = end_x - start_x;
+
+        let stride = self.width() as i64;
+        let mut res = Vec::new();
+        for row in start_y..end_y {
+            let row_offset = row * stride;
+            res.extend_from_slice(
+                &arr[(row_offset + col_offset) as usize
+                    ..(row_offset + col_offset + col_len) as usize],
+            );
+        }
+        res.into()
     }
 
     ///get array of only the unique indices used in the mosaic

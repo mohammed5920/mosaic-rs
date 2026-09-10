@@ -121,25 +121,65 @@ impl ApplicationHandler for App {
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
-            //NOTE: resize handler
             WindowEvent::Resized(size) => {
-                self.state().camera.resize(size);
-                self.state().renderer.resize(size)
+                let s = self.state();
+                s.camera.resize(size);
+                s.streamer.update_visibility_map(&s.camera, &s.mosaic);
+                s.renderer.resize(size)
             }
 
             WindowEvent::CursorMoved { position, .. } => {
-                self.state().input.cursor_pos = (position.x, position.y);
-                if self.state().input.is_clicked {
-                    if let Some((ox, oy)) = self.state().input.clicked_cursor_pos {
-                        let (nx, ny) = self.state().input.cursor_pos;
+                let s = self.state();
+                s.input.cursor_pos = (position.x, position.y);
+                if s.input.is_clicked {
+                    if let Some((ox, oy)) = s.input.clicked_cursor_pos {
+                        let (nx, ny) = s.input.cursor_pos;
                         let (dx, dy) = (nx - ox, ny - oy);
-                        let s = self.state();
+
                         s.camera.pan((-dx as f32, -dy as f32));
-                        s.camera.calc_visible_mosaic_bounding_box(&s.mosaic);
+                        s.streamer.update_visibility_map(&s.camera, &s.mosaic);
                     }
-                    self.state().input.clicked_cursor_pos = Some(self.state().input.cursor_pos);
+                    s.input.clicked_cursor_pos = Some(s.input.cursor_pos);
                 } else {
-                    self.state().input.clicked_cursor_pos = None;
+                    s.input.clicked_cursor_pos = None;
+                }
+            }
+
+            WindowEvent::MouseWheel {
+                delta: LineDelta(_, y),
+                ..
+            } => {
+                let s = self.state();
+                if y > 0.0 {
+                    //NOTE: mouse wheel delta (4 matching python)
+                    s.camera.zoom(4);
+                } else if y < 0.0 {
+                    s.camera.zoom(-4);
+                }
+                s.streamer.update_visibility_map(&s.camera, &s.mosaic);
+            }
+
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(key_code),
+                        ..
+                    },
+                ..
+            } => {
+                let mut is_dirty = true;
+                let s = self.state();
+                match key_code {
+                    KeyCode::KeyD => s.camera.pan((-10.0, 0.0)),
+                    KeyCode::KeyS => s.camera.pan((0.0, 10.0)),
+                    KeyCode::KeyA => s.camera.pan((10.0, 0.0)),
+                    KeyCode::KeyW => s.camera.pan((0.0, -10.0)),
+                    KeyCode::ArrowUp => s.camera.zoom(1),
+                    KeyCode::ArrowDown => s.camera.zoom(-1),
+                    _ => is_dirty = false,
+                }
+                if is_dirty {
+                    s.streamer.update_visibility_map(&s.camera, &s.mosaic);
                 }
             }
 
@@ -148,51 +188,19 @@ impl ApplicationHandler for App {
                 button: MouseButton::Left,
                 ..
             } => {
-                self.state().input.is_clicked = state.is_pressed();
+                let s = self.state();
+                s.input.is_clicked = state.is_pressed();
                 if !state.is_pressed() {
-                    self.state().input.clicked_cursor_pos = None;
+                    s.input.clicked_cursor_pos = None;
                 }
             }
 
-            WindowEvent::MouseWheel {
-                delta: LineDelta(_, y),
-                ..
-            } => {
-                if y > 0.0 {
-                    //NOTE: mouse wheel delta (4 matching python)
-                    self.state().camera.zoom(4);
-                } else if y < 0.0 {
-                    self.state().camera.zoom(-4);
-                }
-            }
-
-            //NOTE: keyboard handler
-            WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        physical_key: PhysicalKey::Code(key_code),
-                        ..
-                    },
-                ..
-            } => match key_code {
-                KeyCode::KeyD => self.state().camera.pan((-10.0, 0.0)),
-                KeyCode::KeyS => self.state().camera.pan((0.0, 10.0)),
-                KeyCode::KeyA => self.state().camera.pan((10.0, 0.0)),
-                KeyCode::KeyW => self.state().camera.pan((0.0, -10.0)),
-                KeyCode::ArrowUp => self.state().camera.zoom(1),
-                KeyCode::ArrowDown => self.state().camera.zoom(-1),
-                _ => {}
-            },
-
-            //NOTE: Renderer
             WindowEvent::RedrawRequested => {
                 let s = self.state();
-                s.streamer.stream();
                 s.renderer.render();
                 s.window.request_redraw();
             }
 
-            //NOTE: destructor
             WindowEvent::CloseRequested => {
                 event_loop.exit();
             }

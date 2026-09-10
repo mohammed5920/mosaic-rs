@@ -1,8 +1,11 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
-use rustc_hash::{FxBuildHasher, FxHashMap};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 
-use crate::types::StoreIndex;
+use crate::types::{DenseIndex, StoreIndex};
 
 pub(crate) enum TileStore {
     Fast(FastStore),
@@ -15,6 +18,7 @@ pub(crate) struct StoredFrame {
 }
 
 pub(crate) struct FastStore {
+    tracker: FxHashSet<DenseIndex>,
     inner: Vec<StoredFrame>,
 }
 
@@ -31,6 +35,7 @@ impl TileStore {
         if !is_smart {
             println!("size {tile_size}: fast");
             TileStore::Fast(FastStore {
+                tracker: HashSet::with_hasher(FxBuildHasher),
                 inner: Vec::with_capacity(length as usize),
             })
         } else {

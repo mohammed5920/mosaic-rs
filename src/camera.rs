@@ -1,7 +1,7 @@
 use wgpu::util::DeviceExt as _;
 use winit::dpi::PhysicalSize;
 
-use crate::{config::CONFIG, mosaic::Mosaic};
+use crate::{config::CONFIG, mosaic::Mosaic, types::Bb};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -22,20 +22,20 @@ pub(crate) struct AppCameraWrapper {
 
 impl AppCamera {
     ///[xmin, ymin], [xmax, ymax]
-    pub(crate) fn visible_world_bounds(&self) -> ([i64; 2], [i64; 2]) {
+    pub(crate) fn visible_world_bounds(&self) -> Bb {
         let zoom = self.zoom_factor();
-        let half_viewport_world = [
+        let half_viewport_world = (
             (self.viewport[0] * 0.5) / zoom,
             (self.viewport[1] * 0.5) / zoom,
-        ];
-        let min = [
-            (self.center[0] - half_viewport_world[0]).floor() as i64,
-            (self.center[1] - half_viewport_world[1]).floor() as i64,
-        ];
-        let max = [
-            (self.center[0] + half_viewport_world[0]).ceil() as i64,
-            (self.center[1] + half_viewport_world[1]).ceil() as i64,
-        ];
+        );
+        let min = (
+            (self.center[0] - half_viewport_world.0).floor() as i64,
+            (self.center[1] - half_viewport_world.1).floor() as i64,
+        );
+        let max = (
+            (self.center[0] + half_viewport_world.0).ceil() as i64,
+            (self.center[1] + half_viewport_world.1).ceil() as i64,
+        );
         (min, max)
     }
 
@@ -93,21 +93,18 @@ impl AppCameraWrapper {
     ///get the bounding box in mosaic coords of what the camera is currently looking at
     ///
     ///None if camera is looking entirely outside the mosaic
-    pub(crate) fn calc_visible_mosaic_bounding_box(
-        &self,
-        mosaic: &Mosaic,
-    ) -> Option<([i64; 2], [i64; 2])> {
+    pub(crate) fn calc_visible_mosaic_bounding_box(&self, mosaic: &Mosaic) -> Option<Bb> {
         let (mmin, mmax) = (
-            [0i64, 0i64],
-            [mosaic.width() as i64, mosaic.height() as i64],
+            (0i64, 0i64),
+            (mosaic.width() as i64, mosaic.height() as i64),
         );
         if self.inner.zoom_steps <= 0 {
             return Some((mmin, mmax));
         };
         let (vmin, vmax) = self.inner.visible_world_bounds();
-        let min = [vmin[0].max(mmin[0]), vmin[1].max(mmin[1])];
-        let max = [vmax[0].min(mmax[0]).max(0), vmax[1].min(mmax[1]).max(0)];
-        if min[0] >= max[0] || min[1] >= max[1] {
+        let min = (vmin.0.max(mmin.0), vmin.1.max(mmin.1));
+        let max = (vmax.0.min(mmax.0).max(0), vmax.1.min(mmax.1).max(0));
+        if min.0 >= max.0 || min.1 >= max.1 {
             return None;
         };
         Some((min, max))
