@@ -10,8 +10,6 @@ use crate::{
 pub(crate) struct StaticMosaic {
     pub(crate) source: PicSource,
     pub(crate) tiles: Arc<[Tile]>,
-    ///array of len(source.width*source.height) of indices into all tiles
-    pub(crate) sparse_matches: Arc<[MatchIndex]>,
     ///array containing the unique tiles indices that are used to compose the final image (used for sizing page table, streaming heurestics, etc.)
     pub(crate) unique_matches: Arc<[MatchIndex]>,
     ///array of len(tiles) where index = MatchIndex and value = DenseIndex (reduced address space to just the tiles used in this mosaic)
@@ -50,7 +48,6 @@ impl StaticMosaic {
                 .map(|midx| dense_map[midx.0 as usize])
                 .collect::<Vec<_>>()
                 .into(),
-            sparse_matches: made_matches.into(),
             dense_map: dense_map.into(),
         }
     }

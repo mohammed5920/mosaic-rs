@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc, time::Instant};
+use std::{collections::HashMap, sync::Arc};
 
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use sysinfo::{MemoryRefreshKind, RefreshKind, System};
@@ -9,7 +9,7 @@ use crate::{
     config::CONFIG,
     mosaic::{Mosaic, tiles::Tile},
     streamer::tile_store::TileStore,
-    types::{Bb, DenseIndex},
+    types::Bb,
     util::bb_util::subtract_rect,
 };
 
@@ -25,7 +25,8 @@ pub(crate) struct Streamer {
     pub(crate) palette_view: wgpu::TextureView,
     tiles: Arc<[Tile]>,
     stores: FxHashMap<u64, TileStore>,
-    visibility_map: FxHashMap<DenseIndex, u64>,
+    ///where index is a DenseIndex, value is refcount visible on screen
+    visibility_map: Vec<u64>,
     last_frame_visible_bb: Option<Bb>,
     res_limit: u64,
     fast_limit: u64,
@@ -124,18 +125,7 @@ impl Streamer {
             stores: tile_stores,
             res_limit,
             fast_limit,
-            visibility_map: mosaic
-                .unique_matches()
-                .iter()
-                .map(|i| {
-                    (
-                        mosaic
-                            .map_sparse_to_dense(*i)
-                            .expect("unique tiles should be present in mosaic"),
-                        0u64,
-                    )
-                })
-                .collect(),
+            visibility_map: mosaic.unique_matches().iter().map(|_| 0).collect(),
             last_frame_visible_bb: None,
         }
     }
@@ -168,15 +158,15 @@ impl Streamer {
         for k in new_acc.iter() {
             let prev = self
                 .visibility_map
-                .get_mut(k)
-                .expect("index is not in visibility map (is the initialiser broken?)");
+                .get_mut(k.0 as usize)
+                .expect("index is not in visibility map (initialiser broken?)");
             *prev += 1;
         }
         for k in old_acc.iter() {
             let prev = self
                 .visibility_map
-                .get_mut(k)
-                .expect("index is not in visibility map (is the initialiser broken?)");
+                .get_mut(k.0 as usize)
+                .expect("index is not in visibility map (initialiser broken?)");
             *prev -= 1;
         }
     }

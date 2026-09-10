@@ -9,7 +9,7 @@ pub(crate) fn subtract_rect(a: Bb, b: Bb) -> Vec<Bb> {
     let i = if min_x < max_x && min_y < max_y {
         ((min_x, min_y), (max_x, max_y))
     } else {
-        return vec![a]
+        return vec![a];
     };
 
     let mut out = Vec::with_capacity(4);

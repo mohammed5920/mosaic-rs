@@ -64,14 +64,6 @@ impl Mosaic {
         };
     }
 
-    ///get array of len(source.width*source.height) of indices into mosaic.tiles
-    pub(crate) fn sparse_matches(&self) -> Arc<[MatchIndex]> {
-        match self {
-            Mosaic::StaticMosaic(m) => m.sparse_matches.clone(),
-            Mosaic::DynamicMosaic => todo!(),
-        }
-    }
-
     ///get array of len(source.width*source.height) of all match indices mapped through mosaic.dense_map
     ///
     ///(falls back to sparse_matches for dynamic mosaics)
@@ -79,14 +71,6 @@ impl Mosaic {
         match self {
             Mosaic::StaticMosaic(m) => m.dense_matches.clone(),
             Mosaic::DynamicMosaic => todo!(),
-        }
-    }
-
-    ///map a MatchIndex to a DenseIndex if this tile was used in the mosaic (always Some for dynamic mosaics)
-    pub(crate) fn map_sparse_to_dense(&self, mi: MatchIndex) -> Option<DenseIndex> {
-        match self {
-            Mosaic::StaticMosaic(m) => m.dense_map.get(mi.0 as usize).copied(),
-            Mosaic::DynamicMosaic => Some(DenseIndex(mi.0)),
         }
     }
 
