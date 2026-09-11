@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicI32, Ordering};
 
 use kiddo::{ImmutableKdTree, dist::SquaredEuclidean};
 
-use crate::{mosaic::tiles::Tile, types::MatchIndex, util::colour_to_key};
+use crate::{mosaic::tiles::Tile, types::SparseIndex, util::colour_to_key};
 
 pub(crate) struct MatchMaker {
     kiddie: ImmutableKdTree<u8, 3>,
@@ -27,7 +27,7 @@ impl MatchMaker {
         }
     }
 
-    pub(crate) fn matchmake(&self, query: &[u8]) -> Vec<MatchIndex> {
+    pub(crate) fn matchmake(&self, query: &[u8]) -> Vec<SparseIndex> {
         debug_assert!(
             query.len().is_multiple_of(3),
             "pixel array is not divisible by 3 (not valid RGB)"
@@ -50,7 +50,7 @@ impl MatchMaker {
                 }
                 res
             })
-            .map(MatchIndex)
+            .map(SparseIndex)
             .collect()
     }
 }

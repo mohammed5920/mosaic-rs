@@ -3,14 +3,13 @@ use std::{rc::Rc, sync::Arc};
 use camino::Utf8PathBuf;
 
 use crate::{
-    config::CONFIG,
     mosaic::{
         matchmaker::MatchMaker,
         media_source::Source,
         mosaic_static::StaticMosaic,
-        tiles::{Tile, load_tiles, syn_tiles::load_synthetic_tiles},
+        tiles::{Tile, load_tiles},
     },
-    types::{Bb, DenseIndex, MatchIndex},
+    types::{Bb, DenseIndex},
     util::benchmark,
 };
 
@@ -29,13 +28,7 @@ impl Mosaic {
         source_path: &Utf8PathBuf,
         tiles_path: &Utf8PathBuf,
     ) -> anyhow::Result<Mosaic> {
-        let tiles = if CONFIG.synthetic_tile_count.is_some() {
-            benchmark("generating synthetic tiles", || {
-                load_synthetic_tiles(CONFIG.synthetic_tile_count.unwrap())
-            })
-        } else {
-            benchmark("loading tiles", || load_tiles(tiles_path))?
-        };
+        let tiles = benchmark("loading tiles", || load_tiles(tiles_path))?;
         let matchmaker = benchmark("generating match tree", || MatchMaker::new(&tiles));
         let source = benchmark("loading source", || Source::open(source_path))?;
         match source {
@@ -66,7 +59,7 @@ impl Mosaic {
 
     ///get array of len(source.width*source.height) of all match indices mapped through mosaic.dense_map
     ///
-    ///(falls back to sparse_matches for dynamic mosaics)
+    ///(falls back to sparse matches for dynamic mosaics)
     pub(crate) fn dense_matches(&self) -> Arc<[DenseIndex]> {
         match self {
             Mosaic::StaticMosaic(m) => m.dense_matches.clone(),
@@ -102,16 +95,6 @@ impl Mosaic {
         res.into()
     }
 
-    ///get array of only the unique indices used in the mosaic
-    ///
-    ///(falls back to mosaic.tiles for dynamic mosaics)
-    pub(crate) fn unique_matches(&self) -> Arc<[MatchIndex]> {
-        match self {
-            Mosaic::StaticMosaic(m) => m.unique_matches.clone(),
-            Mosaic::DynamicMosaic => todo!(),
-        }
-    }
-
     pub(crate) fn width(&self) -> u64 {
         match self {
             Mosaic::StaticMosaic(m) => m.source.width,
@@ -126,7 +109,7 @@ impl Mosaic {
         }
     }
 
-    ///get all tiles loaded in from the tile folder
+    ///get all tiles used in the mosaic (or all of them for dynamic mosaics)
     pub(crate) fn tiles(&self) -> Arc<[Tile]> {
         match self {
             Mosaic::StaticMosaic(m) => m.tiles.clone(),
@@ -145,9 +128,14 @@ impl Mosaic {
     ///
     ///(for dynamic mosaics, falls back to every tile instead)
     pub(crate) fn generate_palette(&self) -> Rc<[[u8; 4]]> {
-        match self {
-            Mosaic::StaticMosaic(m) => m.generate_palette(),
-            Mosaic::DynamicMosaic => todo!(),
+        let tiles = self.tiles();
+        let padded_len = (tiles.len() as f64).sqrt().ceil().powi(2) as usize;
+        let mut res = Vec::with_capacity(padded_len);
+        res.extend((0..padded_len).map(|_| [0u8; 4]));
+        for (dense_index, tile) in tiles.iter().enumerate() {
+            let [r, g, b] = tile.average_colour();
+            res[dense_index] = [r, g, b, 255];
         }
+        res.into()
     }
 }

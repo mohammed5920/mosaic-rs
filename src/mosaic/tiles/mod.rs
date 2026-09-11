@@ -1,5 +1,4 @@
 pub(crate) mod pic_tiles;
-pub(crate) mod syn_tiles;
 pub(crate) mod vid_tiles;
 
 use std::collections::HashSet;
@@ -11,7 +10,6 @@ use rustc_hash::FxBuildHasher;
 use crate::{
     mosaic::tiles::{
         pic_tiles::PicTile,
-        syn_tiles::SynTile,
         vid_tiles::{VidTile, vid_tiles_from_path},
     },
     util::{
@@ -39,10 +37,10 @@ pub(crate) fn calc_average_colour(pixels: &[u8]) -> [u8; 3] {
     ]
 }
 
+#[derive(Clone)]
 pub(crate) enum Tile {
     Pic(PicTile),
     Vid(VidTile),
-    Syn(SynTile),
 }
 
 impl Tile {
@@ -50,7 +48,22 @@ impl Tile {
         match self {
             Tile::Pic(pic_tile) => pic_tile.average_colour,
             Tile::Vid(vid_tile) => vid_tile.average_colour,
-            Tile::Syn(syn_tile) => syn_tile.average_colour,
+        }
+    }
+
+    ///panics if not pictile
+    pub(crate) fn as_pic(&self) -> &PicTile {
+        match self {
+            Tile::Pic(p) => p,
+            Tile::Vid(_) => panic!("called .as_pic() on a vidtile"),
+        }
+    }
+
+    ///panics if not vidtile
+    pub(crate) fn as_vid(&self) -> &VidTile {
+        match self {
+            Tile::Pic(_) => panic!("called .as_vid() on a vidtile"),
+            Tile::Vid(v) => v,
         }
     }
 

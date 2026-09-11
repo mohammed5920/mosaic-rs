@@ -9,6 +9,8 @@ use std::{
 use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 
+use crate::util::is_power_of_two;
+
 const CONFIG_PATH: &str = "config.json";
 pub(crate) static CONFIG: LazyLock<AppConfig> = LazyLock::new(load_config);
 
@@ -25,7 +27,6 @@ pub(crate) struct AppConfig {
     ///don't make the tiles move
     pub(crate) force_static_tiles: bool,
 
-    pub(crate) synthetic_tile_count: Option<NonZero<u64>>,
     pub(crate) hard_seek_threshold: NonZero<u64>,
     pub(crate) zoom_steps_per_octave: NonZero<u64>,
     pub(crate) tile_base_res: NonZero<u64>,
@@ -56,7 +57,6 @@ pub(crate) fn load_config() -> AppConfig {
                 force_static_tiles: false,
                 backend: wgpu::Backend::Vulkan,
 
-                synthetic_tile_count: None,
                 difference_threshold: 300,
                 ram_percent: 75,
                 prefetch_multiplier: NonZero::new(4).unwrap(),
@@ -72,13 +72,7 @@ pub(crate) fn load_config() -> AppConfig {
     };
 
     assert!(
-        config
-            .synthetic_tile_count
-            .is_none_or(|c| c.get() <= 16_777_216),
-        "synthetic_tile_count must be <= 16_777_216"
-    );
-    assert!(
-        (config.prefetch_multiplier.get() as f64).log2().fract() == 0.0,
+        is_power_of_two(config.prefetch_multiplier.get()),
         "prefetch_multiplier must be a power of 2"
     );
     assert!(

@@ -61,7 +61,7 @@ impl ApplicationHandler for App {
             Arc::new(
                 event_loop
                     .create_window(Window::default_attributes())
-                    .unwrap(),
+                    .expect("could not create window"),
             )
         });
         let (mosaic, mut renderer) = thread::scope(|s| {
@@ -75,17 +75,27 @@ impl ApplicationHandler for App {
                 .expect("could not create mosaic");
             (mosaic, renderer)
         });
+
+        let display_res = window
+            .current_monitor()
+            .expect("can't detect current screen size")
+            .size();
+        let res_limit = 2u64.pow(
+            (display_res.width.min(display_res.height) as f64)
+                .log2()
+                .floor()
+                .min(2048.0) as u32,
+        );
+
         let streamer = benchmark("initialising streamer", || {
             Streamer::new(
                 &renderer.device,
                 &mut renderer.queue,
                 &mosaic,
-                window
-                    .current_monitor()
-                    .expect("can't detect current screen size")
-                    .size(),
+                display_res,
                 mosaic.total_tile_frames(),
                 (mosaic.total_tile_frames() as f64 / mosaic.tiles().len() as f64).ceil() as u64,
+                res_limit,
             )
         });
         let camera = AppCameraWrapper::new(
@@ -96,7 +106,9 @@ impl ApplicationHandler for App {
                 window.inner_size().width as f32,
                 window.inner_size().height as f32,
             ),
+            res_limit,
         );
+
         renderer.bind_resources(&camera.buffer, streamer.palette_view.clone(), &mosaic);
         renderer.update_mosaic_texture(&mosaic.dense_matches());
 
@@ -124,7 +136,7 @@ impl ApplicationHandler for App {
             WindowEvent::Resized(size) => {
                 let s = self.state();
                 s.camera.resize(size);
-                s.streamer.update_visibility_map(&s.camera, &s.mosaic);
+                s.streamer.update_visibility(&s.camera, &s.mosaic);
                 s.renderer.resize(size)
             }
 
@@ -137,7 +149,7 @@ impl ApplicationHandler for App {
                         let (dx, dy) = (nx - ox, ny - oy);
 
                         s.camera.pan((-dx as f32, -dy as f32));
-                        s.streamer.update_visibility_map(&s.camera, &s.mosaic);
+                        s.streamer.update_visibility(&s.camera, &s.mosaic);
                     }
                     s.input.clicked_cursor_pos = Some(s.input.cursor_pos);
                 } else {
@@ -150,13 +162,17 @@ impl ApplicationHandler for App {
                 ..
             } => {
                 let s = self.state();
+                let before_ts = s.camera.get_onscreen_tile_size();
                 if y > 0.0 {
                     //NOTE: mouse wheel delta (4 matching python)
-                    s.camera.zoom(4);
+                    s.camera.set_zoom(4);
                 } else if y < 0.0 {
-                    s.camera.zoom(-4);
+                    s.camera.set_zoom(-4);
                 }
-                s.streamer.update_visibility_map(&s.camera, &s.mosaic);
+                if s.camera.get_onscreen_tile_size() > before_ts {
+                    s.streamer.on_lod_change();
+                }
+                s.streamer.update_visibility(&s.camera, &s.mosaic);
             }
 
             WindowEvent::KeyboardInput {
@@ -169,17 +185,21 @@ impl ApplicationHandler for App {
             } => {
                 let mut is_dirty = true;
                 let s = self.state();
+                let before_ts = s.camera.get_onscreen_tile_size();
                 match key_code {
                     KeyCode::KeyD => s.camera.pan((-10.0, 0.0)),
                     KeyCode::KeyS => s.camera.pan((0.0, 10.0)),
                     KeyCode::KeyA => s.camera.pan((10.0, 0.0)),
                     KeyCode::KeyW => s.camera.pan((0.0, -10.0)),
-                    KeyCode::ArrowUp => s.camera.zoom(1),
-                    KeyCode::ArrowDown => s.camera.zoom(-1),
+                    KeyCode::ArrowUp => s.camera.set_zoom(1),
+                    KeyCode::ArrowDown => s.camera.set_zoom(-1),
                     _ => is_dirty = false,
                 }
                 if is_dirty {
-                    s.streamer.update_visibility_map(&s.camera, &s.mosaic);
+                    if s.camera.get_onscreen_tile_size() > before_ts {
+                        s.streamer.on_lod_change();
+                    }
+                    s.streamer.update_visibility(&s.camera, &s.mosaic);
                 }
             }
 
@@ -197,6 +217,7 @@ impl ApplicationHandler for App {
 
             WindowEvent::RedrawRequested => {
                 let s = self.state();
+                s.streamer.check_refresh(s.camera.get_onscreen_tile_size());
                 s.renderer.render();
                 s.window.request_redraw();
             }
@@ -213,7 +234,7 @@ impl ApplicationHandler for App {
 pub(crate) fn main() {
     set_panic_hook();
     ffmpeg::init().expect("could not initialise FFMPEG");
-    let event_loop: EventLoop<()> = EventLoop::new().unwrap();
+    let event_loop: EventLoop<()> = EventLoop::new().expect("could not initialise winit");
     event_loop.set_control_flow(ControlFlow::Wait);
     let mut app = App(None);
     event_loop

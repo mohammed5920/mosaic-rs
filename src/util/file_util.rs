@@ -4,7 +4,7 @@ use anyhow::{Context as _, anyhow};
 use camino::Utf8PathBuf;
 
 static PIC_EXTENSIONS: LazyLock<HashSet<String>> = LazyLock::new(|| {
-    ["bmp", "gif", "ico", "jpeg", "png", "webp", "jpg"]
+    ["bmp", "gif", "ico", "jpeg", "png", "webp", "jpg", "test"]
         .into_iter()
         .map(|s| s.to_string())
         .collect()

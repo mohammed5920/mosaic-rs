@@ -32,6 +32,10 @@ pub(crate) fn colour_to_key(rgb: [u8; 3]) -> usize {
     (r as usize) << 16 | (g as usize) << 8 | (b as usize)
 }
 
+pub(crate) fn is_power_of_two(number: u64) -> bool {
+    (number as f64).log2().fract() == 0.0
+}
+
 pub(crate) fn set_panic_hook() {
     let old_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {

@@ -38,6 +38,7 @@ enum CacheEvaluationResult {
     },
 }
 
+#[derive(Clone)]
 pub(crate) struct VidTile {
     pub(crate) average_colour: [u8; 3],
     pub(crate) start_frame_index: u32,

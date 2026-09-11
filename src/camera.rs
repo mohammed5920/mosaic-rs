@@ -18,6 +18,7 @@ pub(crate) struct AppCameraWrapper {
     pub(crate) buffer: wgpu::Buffer,
     inner: AppCamera,
     queue: wgpu::Queue,
+    res_limit: u64,
 }
 
 impl AppCamera {
@@ -50,6 +51,7 @@ impl AppCameraWrapper {
         queue: wgpu::Queue,
         mosaic_dims: (f32, f32),
         window_dims: (f32, f32),
+        res_limit: u64,
     ) -> Self {
         let inner_camera = AppCamera {
             center: [mosaic_dims.0 / 2.0, mosaic_dims.1 / 2.0],
@@ -65,6 +67,7 @@ impl AppCameraWrapper {
             }),
             inner: inner_camera,
             queue,
+            res_limit,
         }
     }
 
@@ -85,14 +88,26 @@ impl AppCameraWrapper {
         self.sync();
     }
 
-    pub(crate) fn zoom(&mut self, delta: i32) {
+    pub(crate) fn set_zoom(&mut self, delta: i32) {
         self.inner.zoom_steps += delta;
-        self.sync();
+        if self.get_onscreen_tile_size() > self.res_limit {
+            self.inner.zoom_steps -= delta
+        } else {
+            self.sync();
+        }
+    }
+
+    pub(crate) fn get_onscreen_tile_size(&self) -> u64 {
+        let zs = self.inner.zoom_steps;
+        let zo = self.inner.steps_per_octave as i32;
+        2f64.powi((zs + zo - 1) / zo)
+            .max(1.0)
+            .min(self.res_limit as f64) as u64
     }
 
     ///is zoomed higher than 100%?
     pub(crate) fn is_zoomed_in(&self) -> bool {
-        self.inner.zoom_steps >= 0
+        self.get_onscreen_tile_size() >= 2
     }
 
     ///get the bounding box in mosaic coords of what the camera is currently looking at
@@ -103,9 +118,6 @@ impl AppCameraWrapper {
             (0i64, 0i64),
             (mosaic.width() as i64, mosaic.height() as i64),
         );
-        if !self.is_zoomed_in() {
-            return Some((mmin, mmax));
-        };
         let (vmin, vmax) = self.inner.visible_world_bounds();
         let min = (vmin.0.max(mmin.0), vmin.1.max(mmin.1));
         let max = (vmax.0.min(mmax.0).max(0), vmax.1.min(mmax.1).max(0));
