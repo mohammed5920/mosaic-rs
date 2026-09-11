@@ -180,10 +180,15 @@ impl Streamer {
         }
     }
 
-    ///set while zooming *in* if transitioning to a new LOD level
+    ///call while zooming *in* if transitioning to a new LOD level
     pub(crate) fn on_lod_change(&mut self) {
         self.stream_kill_flag.store(true, Ordering::Relaxed);
         self.is_dirty = true;
+    }
+
+    ///call when shutting down, or the bg thread panics when the main thread exits
+    pub(crate) fn shutdown(&self) {
+        let _ = self.stream_thread_sender.send(StreamingMessage::Shutdown);
     }
 
     pub(crate) fn update_visibility(&mut self, camera: &AppCameraWrapper, mosaic: &Mosaic) {
@@ -243,7 +248,7 @@ impl Streamer {
 
     ///call every frame to populate the tiles
     pub(crate) fn check_refresh(&mut self, tile_size: u64) {
-        if !self.is_dirty {
+        if !self.is_dirty || tile_size <= 1 {
             return;
         }
         self.is_dirty = false;
@@ -252,14 +257,14 @@ impl Streamer {
             Ok(StreamingMessage::Init) => {
                 //skip the check for the very first cycle
             }
-            Ok(StreamingMessage::Finished { after_ram_bytes }) => {
+            Ok(StreamingMessage::CycleEnd { after_ram_bytes }) => {
                 self.ram_usage_bytes = after_ram_bytes
             }
             Err(TryRecvError::Empty) => {
                 self.is_dirty = true;
                 return;
             }
-            Ok(StreamingMessage::Start { .. }) => {
+            Ok(_) => {
                 panic!("streamer recieved invalid flag from bg thread")
             }
             Err(TryRecvError::Disconnected) => {
@@ -269,7 +274,7 @@ impl Streamer {
 
         self.stream_kill_flag.store(false, Ordering::Relaxed);
         self.stream_thread_sender
-            .send(StreamingMessage::Start {
+            .send(StreamingMessage::CycleStart {
                 tile_size,
                 before_ram_bytes: self.ram_usage_bytes,
                 ram_limit_bytes: self.ram_limit_bytes,

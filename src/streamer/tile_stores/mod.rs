@@ -17,6 +17,17 @@ pub(crate) struct StoreFrame {
     cb_cr: Arc<[u8]>,
 }
 
+impl StoreFrame {
+    pub(crate) fn new(y: Arc<[u8]>, cb_cr: Arc<[u8]>, tile_size: u64) -> Self {
+        debug_assert!(y.len() == tile_size.pow(2) as usize, "y plane is malformed");
+        debug_assert!(
+            cb_cr.len() == y.len() / 2 as usize,
+            "cb_cr plane is malformed"
+        );
+        Self { y, cb_cr }
+    }
+}
+
 pub(crate) enum TileStore {
     Fast(FastStore),
     Smart(SmartStore),

@@ -2,11 +2,11 @@ use std::fs;
 
 use anyhow::{Context, bail};
 use camino::Utf8PathBuf;
-use image::{DynamicImage, ImageReader};
+use image::{DynamicImage, ImageReader, imageops::FilterType};
 use imohash::Hasher as ImoHasher;
 use yuv::{
-    YuvChromaSubsampling, YuvConversionMode, YuvPlanarImageMut, YuvRange, YuvStandardMatrix,
-    rgb_to_yuv420,
+    YuvBiPlanarImageMut, YuvChromaSubsampling, YuvConversionMode, YuvRange,
+    YuvStandardMatrix, rgb_to_yuv_nv12,
 };
 
 use crate::{
@@ -33,6 +33,14 @@ fn open_image(path: &str) -> anyhow::Result<DynamicImage> {
         .decode()
         .with_context(|| format!("Error decoding {path}"))?;
     Ok(res)
+}
+
+fn image_to_tile(image: &DynamicImage, tile_size: u64) -> DynamicImage {
+    let min_dim = image.width().min(image.height());
+    let x_offset = (image.width() - min_dim) / 2;
+    let y_offset = (image.height() - min_dim) / 2;
+    let cropped = image.crop_imm(x_offset, y_offset, min_dim as u32, min_dim as u32);
+    cropped.resize(tile_size as u32, tile_size as u32, FilterType::Nearest)
 }
 
 impl PicTile {
@@ -65,7 +73,11 @@ impl PicTile {
 
         let res = match open_image(path.as_str()) {
             Ok(decoded) => CachedPicTile::Valid(PicTile {
-                average_colour: calc_average_colour(&decoded.to_rgb8().into_raw()),
+                average_colour: calc_average_colour(
+                    &image_to_tile(&decoded, CONFIG.tile_base_res.get())
+                        .into_rgb8()
+                        .into_raw(),
+                ),
                 source_path: path.to_string(),
             }),
             Err(e) => CachedPicTile::Unreadable {
@@ -84,21 +96,27 @@ impl PicTile {
     }
 
     pub(crate) fn stream_in(&self, tile_size: u64) -> anyhow::Result<StoreFrame> {
-        let decoded = open_image(&self.source_path)?;
-        // decoded.resize(nwidth, nheight, filter);
-        // let mut planar_image = YuvPlanarImageMut::<u8>::alloc(
-        //     tile_size as u32,
-        //     tile_size as u32,
-        //     YuvChromaSubsampling::Yuv420,
-        // );
-        // rgb_to_yuv420(
-        //     &mut planar_image,
-        //     &src_bytes,
-        //     rgba_stride as u32,
-        //     YuvRange::Limited,
-        //     YuvStandardMatrix::Bt601,
-        //     YuvConversionMode::Fast
-        // );
-        bail!("")
+        let rgb_tile = image_to_tile(&open_image(&self.source_path)?, tile_size);
+        let mut planar_image: YuvBiPlanarImageMut<'_, u8> = YuvBiPlanarImageMut::<u8>::alloc(
+            tile_size as u32,
+            tile_size as u32,
+            YuvChromaSubsampling::Yuv420,
+        );
+        rgb_to_yuv_nv12(
+            &mut planar_image,
+            &rgb_tile.into_rgb8().into_raw(),
+            (tile_size as u32) * 3,
+            YuvRange::Limited,
+            YuvStandardMatrix::Bt601,
+            YuvConversionMode::Fast,
+        )?;
+        let YuvBiPlanarImageMut {
+            y_plane, uv_plane, ..
+        } = planar_image;
+        Ok(StoreFrame::new(
+            y_plane.borrow().into(),
+            uv_plane.borrow().into(),
+            tile_size,
+        ))
     }
 }

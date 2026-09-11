@@ -9,20 +9,24 @@ use rayon::prelude::*;
 use rustc_hash::FxHashSet;
 
 use crate::{
-    config::CONFIG, mosaic::tiles::Tile, streamer::tile_stores::TileStore, types::DenseIndex,
-    util::is_power_of_two,
+    config::CONFIG,
+    mosaic::tiles::Tile,
+    streamer::tile_stores::TileStore,
+    types::DenseIndex,
+    util::{benchmark, is_power_of_two},
 };
 
 pub(crate) enum StreamingMessage {
     Init,
-    Start {
+    CycleStart {
         tile_size: u64,
         before_ram_bytes: u64,
         ram_limit_bytes: u64,
     },
-    Finished {
+    CycleEnd {
         after_ram_bytes: u64,
     },
+    Shutdown,
 }
 
 //create a dedicated struct to save locking and hashing the tracker sets more than once
@@ -64,17 +68,18 @@ pub(crate) fn streamer_thread(
     end_job(StreamingMessage::Init);
 
     loop {
-        let StreamingMessage::Start {
-            tile_size,
-            before_ram_bytes,
-            ram_limit_bytes,
-        } = parent_reciever
+        let (tile_size, before_ram_bytes, ram_limit_bytes) = match parent_reciever
             .recv()
             .expect("streamer should keep bg channel open")
-        else {
-            panic!("bg thread recieved invalid message from streamer")
+        {
+            StreamingMessage::CycleStart {
+                tile_size,
+                before_ram_bytes,
+                ram_limit_bytes,
+            } => (tile_size, before_ram_bytes, ram_limit_bytes),
+            StreamingMessage::Shutdown => return,
+            _ => panic!("bg thread recieved invalid message from streamer"),
         };
-
         println!("stream started");
 
         debug_assert!(
@@ -90,7 +95,7 @@ pub(crate) fn streamer_thread(
 
         if difference.is_empty() {
             println!("stream ended - no difference");
-            end_job(StreamingMessage::Finished {
+            end_job(StreamingMessage::CycleEnd {
                 after_ram_bytes: before_ram_bytes,
             });
             continue;
@@ -122,23 +127,35 @@ pub(crate) fn streamer_thread(
 
         if kill_flag_ref.load(Ordering::Relaxed) {
             println!("stream ended - kill flag 1");
-            end_job(StreamingMessage::Finished {
+            end_job(StreamingMessage::CycleEnd {
                 after_ram_bytes: before_ram_bytes,
             });
         }
 
         let (a, b) = rayon::join(
             || {
-                pic_tiles
-                    .par_iter()
-                    .map(|idx| tiles_ref[idx.0 as usize].as_pic().stream_in(super_res))
-                    .collect::<Vec<_>>()
+                benchmark(
+                    &format!("streaming in {} pictures at {super_res}x{super_res}", {
+                        pic_tiles.len()
+                    }),
+                    || {
+                        pic_tiles
+                            .par_iter()
+                            .map(|idx| {
+                                tiles_ref[idx.0 as usize]
+                                    .as_pic()
+                                    .stream_in(super_res)
+                                    .expect("temp")
+                            })
+                            .collect::<Vec<_>>()
+                    },
+                )
             },
             || {},
         );
 
         println!("stream ended - end of loop");
-        end_job(StreamingMessage::Finished {
+        end_job(StreamingMessage::CycleEnd {
             after_ram_bytes: before_ram_bytes,
         });
     }

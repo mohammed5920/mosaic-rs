@@ -223,6 +223,7 @@ impl ApplicationHandler for App {
             }
 
             WindowEvent::CloseRequested => {
+                self.state().streamer.shutdown();
                 event_loop.exit();
             }
 

@@ -37,7 +37,7 @@ ffmpeg-next = { version = "9.0.0", default-features = false, features = ["codec"
 #querying video CFR metadata
 ffprobe = { version = "0.4.0", default-features = false }
 #reading images
-image = { version = "0.25.10", default-features = false, features = ["bmp", "gif", "ico", "jpeg", "png", "rayon", "webp"] }
+image = { version = "0.25.10", default-features = false, features = ["bmp", "gif", "ico", "jpeg", "png", "webp"] }
 #constant time hashing of videos for caching
 imohash = { version = "0.1.2", default-features = false }
 #k-d tree for fast matching
