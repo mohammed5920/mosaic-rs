@@ -75,17 +75,21 @@ pub(crate) fn streamer_thread(
             panic!("bg thread recieved invalid message from streamer")
         };
 
+        println!("stream started");
+
         debug_assert!(
             is_power_of_two(tile_size),
             "tile size {tile_size} is not a power of two"
         );
 
-        let difference = tile_stores_ref[ts_to_si(tile_size)]
-            .read_tracker()
-            .difference(&onscreen_set_ref.lock())
+        let difference = onscreen_set_ref
+            .lock()
+            .difference(&tile_stores_ref[ts_to_si(tile_size)].read_tracker())
             .copied()
             .collect::<Vec<_>>();
+
         if difference.is_empty() {
+            println!("stream ended - no difference");
             end_job(StreamingMessage::Finished {
                 after_ram_bytes: before_ram_bytes,
             });
@@ -117,18 +121,25 @@ pub(crate) fn streamer_thread(
         }
 
         if kill_flag_ref.load(Ordering::Relaxed) {
+            println!("stream ended - kill flag 1");
             end_job(StreamingMessage::Finished {
                 after_ram_bytes: before_ram_bytes,
             });
         }
 
-        rayon::scope(|s| {
-            s.spawn(|_| {
-                let results = pic_tiles
+        let (a, b) = rayon::join(
+            || {
+                pic_tiles
                     .par_iter()
                     .map(|idx| tiles_ref[idx.0 as usize].as_pic().stream_in(super_res))
-                    .collect::<Vec<_>>();
-            });
-        })
+                    .collect::<Vec<_>>()
+            },
+            || {},
+        );
+
+        println!("stream ended - end of loop");
+        end_job(StreamingMessage::Finished {
+            after_ram_bytes: before_ram_bytes,
+        });
     }
 }
