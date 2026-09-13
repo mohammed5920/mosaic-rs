@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use bincode::config::NoLimit;
 use parking_lot::RwLockReadGuard;
 use rustc_hash::FxHashSet;
 

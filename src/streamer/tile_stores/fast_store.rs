@@ -28,8 +28,6 @@ pub(crate) struct FastStore {
     tracker: RwLock<FxHashSet<DenseIndex>>,
     y_arena: RwLock<Vec<u8>>,
     cbcr_arena: RwLock<Vec<u8>>,
-    //calculate and store this since it's annoying to derive from just the size of the arenas
-    last_tile_frame_count: u64,
 }
 
 impl FastStore {
@@ -38,8 +36,6 @@ impl FastStore {
         let tiles = mosaic.tiles();
         let total_frames = mosaic.total_tile_frames();
         Self {
-            last_tile_frame_count: total_frames
-                - index_map.last().expect("index map should not be empty").0 as u64,
             cbcr_arena: RwLock::new(vec![0u8; (tile_pixels / 2 * total_frames) as usize]),
             y_arena: RwLock::new(vec![0u8; (tile_pixels * total_frames) as usize]),
             tracker: HashSet::with_hasher(FxBuildHasher).into(),

@@ -65,14 +65,6 @@ impl Tile {
         }
     }
 
-    ///panics if not vidtile
-    pub(crate) fn as_vid(&self) -> &VidTile {
-        match self {
-            Tile::Pic(_) => panic!("called .as_vid() on a vidtile"),
-            Tile::Vid(v) => v,
-        }
-    }
-
     pub(crate) fn frame_count(&self) -> u64 {
         if CONFIG.force_static_tiles {
             1

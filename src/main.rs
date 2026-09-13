@@ -182,7 +182,7 @@ impl ApplicationHandler for App {
                 } else if y < 0.0 {
                     s.camera.set_zoom(-4);
                 }
-                if s.camera.get_onscreen_tile_size() > before_ts {
+                if s.camera.get_onscreen_tile_size() != before_ts {
                     s.streamer.on_lod_change();
                 }
                 s.streamer.update_visibility(&s.camera, &s.mosaic);
@@ -209,7 +209,7 @@ impl ApplicationHandler for App {
                     _ => is_dirty = false,
                 }
                 if is_dirty {
-                    if s.camera.get_onscreen_tile_size() > before_ts {
+                    if s.camera.get_onscreen_tile_size() != before_ts {
                         s.streamer.on_lod_change();
                     }
                     s.streamer.update_visibility(&s.camera, &s.mosaic);
@@ -231,8 +231,9 @@ impl ApplicationHandler for App {
             WindowEvent::RedrawRequested => {
                 let s = self.state();
                 if !s.input.is_minimised {
-                    s.streamer.write_atlas(&s.renderer.queue, &s.camera, 0);
                     s.streamer.check_refresh(s.camera.get_onscreen_tile_size());
+                    s.streamer
+                        .write_atlas(&s.renderer.queue, s.camera.get_onscreen_tile_size(), 0);
                     s.renderer.render();
                     s.window.request_redraw();
                 }

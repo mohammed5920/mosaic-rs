@@ -38,6 +38,9 @@ pub(crate) mod tile_stores;
 
 pub(crate) struct Streamer {
     ///pager encoding: 0 = not resident, > 0 = modulo'd index into atlas, + 1
+    pager_buff: Vec<u32>,
+    atlas_y_buff: Vec<u8>,
+    atlas_cbcr_buff: Vec<u8>,
     pager_texture: wgpu::Texture,
     atlas_y_texture: wgpu::Texture,
     atlas_cbcr_texture: wgpu::Texture,
@@ -49,7 +52,9 @@ pub(crate) struct Streamer {
     visibility_map: Vec<u64>,
     visibility_set: Arc<RwLock<FxHashSet<DenseIndex>>>,
     last_frame_visible_bb: Option<Bb>,
-    is_dirty: bool,
+    is_atlas_dirty: bool,
+    is_streaming_dirty: bool,
+    is_streaming_busy: bool,
 
     stores: Arc<[TileStore]>,
     ram_usage_bytes: u64,
@@ -110,6 +115,18 @@ impl Streamer {
             wgpu::TextureFormat::Rg8Unorm,
             None,
         );
+
+        //create cpu side copies of each atlas
+        let pager_buff =
+            vec![0u32; (pager_texture.width() * pager_texture.height()) as usize];
+        let atlas_y_buff =
+            vec![0u8; (atlas_y_texture.width() * atlas_y_texture.height()) as usize];
+        let atlas_cbcr_buff =
+            vec![
+                0u8;
+                (atlas_cbcr_texture.width() * atlas_cbcr_texture.height()) as usize * 2
+            ];
+
 
         //initialise stores
         //size of 2 arrays at current size + tile dictionary at 4x(default) the screen resolution * avg no. of frames per tile
@@ -182,15 +199,20 @@ impl Streamer {
 
         Self {
             pager_view,
+            pager_buff,
             atlas_y_view,
+            atlas_y_buff,
             pager_texture,
-            is_dirty: false,
             atlas_y_texture,
             ram_limit_bytes,
             atlas_cbcr_view,
+            atlas_cbcr_buff,
             atlas_cbcr_texture,
             stores: tile_stores,
+            is_atlas_dirty: false,
             visibility_set: vis_set,
+            is_streaming_busy: true,
+            is_streaming_dirty: false,
             last_frame_visible_bb: None,
             stream_kill_flag: kill_flag,
             stream_thread_sender: to_tx,
@@ -200,10 +222,11 @@ impl Streamer {
         }
     }
 
-    ///call while zooming *in* if transitioning to a new LOD level
+    ///call while zooming if transitioning to a new LOD level
     pub(crate) fn on_lod_change(&mut self) {
         self.stream_kill_flag.store(true, Ordering::Relaxed);
-        self.is_dirty = true;
+        self.is_atlas_dirty = true;
+        self.is_streaming_dirty = true;
     }
 
     ///call when shutting down, or the bg thread panics when the main thread exits
@@ -246,8 +269,9 @@ impl Streamer {
                 .expect("index is not in visibility map (initialiser broken?)");
             //eat the cost of a hash only on fresh tile
             if *prev == 0 {
-                //will flag when panning, resizing and zooming out
-                self.is_dirty = true;
+                //will flag when panning or resizing
+                self.is_atlas_dirty = true;
+                self.is_streaming_dirty = true;
                 set_guard.insert(*k);
             }
             *prev += 1;
@@ -268,64 +292,51 @@ impl Streamer {
 
     ///call every frame to populate the tiles
     pub(crate) fn check_refresh(&mut self, tile_size: u64) {
-        if !self.is_dirty || tile_size <= 1 {
-            return;
-        }
-        self.is_dirty = false;
-
-        match self.stream_thread_receiver.try_recv() {
-            Ok(StreamingMessage::Init) => {
+        if self.is_streaming_busy {
+            match self.stream_thread_receiver.try_recv() {
                 //skip the check for the very first cycle
-            }
-            Ok(StreamingMessage::CycleEnd {
-                after_ram_bytes,
-                did_onscreen_tiles_change,
-            }) => {
-                self.ram_usage_bytes = after_ram_bytes;
-                self.is_dirty = did_onscreen_tiles_change;
-            }
-            Err(TryRecvError::Empty) => {
-                self.is_dirty = true;
-                return;
-            }
-            Ok(invalid_message) => {
-                panic!("streamer recieved {invalid_message:?} from bg thread")
-            }
-            Err(TryRecvError::Disconnected) => {
-                panic!("streamer thread should keep bg channel open")
+                Ok(StreamingMessage::Init) => self.is_streaming_busy = false,
+                //thread is busy
+                Err(TryRecvError::Empty) => return,
+                //thread finished
+                Ok(StreamingMessage::CycleEnd {
+                    after_ram_bytes,
+                    did_onscreen_tiles_change,
+                }) => {
+                    self.is_streaming_busy = false;
+                    self.ram_usage_bytes = after_ram_bytes;
+                    self.is_atlas_dirty = self.is_atlas_dirty || did_onscreen_tiles_change;
+                }
+                Ok(invalid_message) => {
+                    panic!("streamer recieved {invalid_message:?} from bg thread")
+                }
+                Err(TryRecvError::Disconnected) => {
+                    panic!("streamer thread should keep bg channel open")
+                }
             }
         }
 
-        self.stream_kill_flag.store(false, Ordering::Relaxed);
-        self.stream_thread_sender
-            .send(StreamingMessage::CycleStart {
-                tile_size,
-                before_ram_bytes: self.ram_usage_bytes,
-                ram_limit_bytes: self.ram_limit_bytes,
-            })
-            .expect("streamer thread should keep bg channel open");
+        if !self.is_streaming_busy && self.is_streaming_dirty && tile_size >= 2 {
+            self.is_streaming_dirty = false;
+            self.is_streaming_busy = true;
+            self.stream_kill_flag.store(false, Ordering::Relaxed);
+            self.stream_thread_sender
+                .send(StreamingMessage::CycleStart {
+                    tile_size,
+                    before_ram_bytes: self.ram_usage_bytes,
+                    ram_limit_bytes: self.ram_limit_bytes,
+                })
+                .expect("streamer thread should keep bg channel open");
+        }
     }
 
-    pub(crate) fn write_atlas(
-        &self,
-        queue: &wgpu::Queue,
-        camera: &AppCameraWrapper,
-        frame_offset: u64,
-    ) {
-        let tile_size = camera.get_onscreen_tile_size() as usize;
-        if !self.is_dirty || tile_size <= 1 {
+    pub(crate) fn write_atlas(&mut self, queue: &wgpu::Queue, tile_size: u64, frame_offset: u64) {
+        let tile_size = tile_size as usize;
+        if !self.is_atlas_dirty || tile_size <= 1 {
             return;
         }
+        self.is_atlas_dirty = false;
         let visible_guard = self.visibility_set.read();
-        let mut pager_buff =
-            vec![0u32; (self.pager_texture.width() * self.pager_texture.height()) as usize];
-        let mut atlas_y_buff =
-            vec![0u8; (self.atlas_y_texture.width() * self.atlas_y_texture.height()) as usize];
-        let mut atlas_cbcr_buff =
-            vec![
-                0u8;
-                (self.atlas_cbcr_texture.width() * self.atlas_cbcr_texture.height()) as usize * 2
-            ];
 
         self.stores[tile_size_to_store_index(tile_size as u64)].with_tiles(
             &mut visible_guard.iter().copied(),
@@ -334,10 +345,10 @@ impl Streamer {
                 let mut resident_count = 1;
                 for (tile_index, result) in results {
                     match result {
-                        tile_stores::ReadTileResult::Vacant => continue,
+                        tile_stores::ReadTileResult::Vacant => self.pager_buff[tile_index.0 as usize] = 0u32,
                         tile_stores::ReadTileResult::Resident { y, cb_cr } => {
                             //write the pager
-                            pager_buff[tile_index.0 as usize] = resident_count as u32;
+                            self.pager_buff[tile_index.0 as usize] = resident_count as u32;
                             //write atlas y
                             let y_atlas_stride = self.atlas_y_texture.width() as usize;
                             let y_tiles_per_row = y_atlas_stride / tile_size;
@@ -351,7 +362,7 @@ impl Streamer {
                                 let row_offset = y_tile_vertical_offset
                                     + y_tile_horizontal_offset
                                     + y_atlas_stride * row;
-                                atlas_y_buff[row_offset..row_offset + tile_size]
+                                self.atlas_y_buff[row_offset..row_offset + tile_size]
                                     .copy_from_slice(&y[src_offset..src_offset + tile_size]);
                             }
                             // write atlas cbcr
@@ -375,7 +386,7 @@ impl Streamer {
                                     + cbcr_tile_horizontal_offset
                                     + cbcr_atlas_stride * row;
                                 let src_offset = row * cbcr_tile_size_bytes;
-                                atlas_cbcr_buff[row_offset..row_offset + cbcr_tile_size_bytes]
+                                self.atlas_cbcr_buff[row_offset..row_offset + cbcr_tile_size_bytes]
                                     .copy_from_slice(
                                         &cb_cr[src_offset..src_offset + cbcr_tile_size_bytes],
                                     );
@@ -390,19 +401,19 @@ impl Streamer {
         write_texture(
             queue,
             &self.pager_texture,
-            bytemuck::cast_slice(&pager_buff),
+            bytemuck::cast_slice(&self.pager_buff),
             4,
         );
         write_texture(
             queue,
             &self.atlas_y_texture,
-            bytemuck::cast_slice(&atlas_y_buff),
+            bytemuck::cast_slice(&self.atlas_y_buff),
             1,
         );
         write_texture(
             queue,
             &self.atlas_cbcr_texture,
-            bytemuck::cast_slice(&atlas_cbcr_buff),
+            bytemuck::cast_slice(&self.atlas_cbcr_buff),
             2,
         );
     }

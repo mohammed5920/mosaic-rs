@@ -1,5 +1,3 @@
-use camino::Utf8PathBuf;
-
 use crate::mosaic::{matchmaker::MatchMaker, media_source::vid_source::VidSource, tiles::Tile};
 
 pub(crate) struct DynamicMosaic {}
