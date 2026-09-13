@@ -11,7 +11,7 @@ pub(crate) struct SparseIndex(pub(crate) i32);
 
 ///index into a dense array containing only tiles *used in the mosaic*
 ///
-///for dynamic mosaics this is the same as the MatchIndex
+///for dynamic mosaics this is the same as the SparseIndex
 #[repr(C)]
 #[derive(
     Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, bytemuck::Pod, bytemuck::Zeroable,
@@ -22,7 +22,7 @@ pub(crate) struct DenseIndex(pub(crate) i32);
 ///
 ///for static mosaics with static tiles, this is the same as the DenseIndex
 ///
-///for dynamic mosaics, this is the same as both the MatchIndex and DenseIndex
+///for dynamic mosaics, this is the same as both the SparseIndex and DenseIndex
 #[repr(C)]
 #[derive(
     Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, bytemuck::Pod, bytemuck::Zeroable,

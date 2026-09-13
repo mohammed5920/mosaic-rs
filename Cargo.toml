@@ -44,6 +44,8 @@ imohash = { version = "0.1.2", default-features = false }
 kiddo = { version = "6.3.0", default-features = false }
 #convert images to YUV
 yuv = { version = "0.8.17", default-features = false, features = ["sse", "avx", "fast_mode"] }
+#fast image resize
+fast_image_resize = { version = "6.1.0", default-features = false, features = ["std", "image"] }
 
 ##gpu/windowing stuff
 #writing wgpu buffers

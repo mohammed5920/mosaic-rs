@@ -27,6 +27,11 @@ pub(crate) struct AppConfig {
     ///don't make the tiles move
     pub(crate) force_static_tiles: bool,
 
+    //it is sometimes cheaper to fast forward a video to a given frame idx
+    //rather than explicitly seek to it
+    //depending on the gap between where the current frame is vs the target frame
+    //how big is that gap? not easily discoverable, changes per video and sometimes while playing
+    //so this is a best effort guess
     pub(crate) hard_seek_threshold: NonZero<u64>,
     pub(crate) zoom_steps_per_octave: NonZero<u64>,
     pub(crate) tile_base_res: NonZero<u64>,

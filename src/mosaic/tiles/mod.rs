@@ -1,13 +1,15 @@
 pub(crate) mod pic_tiles;
 pub(crate) mod vid_tiles;
 
-use std::collections::HashSet;
+use std::{cell::RefCell, collections::HashSet};
 
 use camino::Utf8PathBuf;
+use fast_image_resize::Resizer;
 use rayon::prelude::*;
 use rustc_hash::FxBuildHasher;
 
 use crate::{
+    config::CONFIG,
     mosaic::tiles::{
         pic_tiles::PicTile,
         vid_tiles::{VidTile, vid_tiles_from_path},
@@ -35,6 +37,10 @@ pub(crate) fn calc_average_colour(pixels: &[u8]) -> [u8; 3] {
         (sums[1] / chunked.len() as u64) as u8,
         (sums[2] / chunked.len() as u64) as u8,
     ]
+}
+
+thread_local! {
+    pub(crate) static RESIZER: RefCell<Resizer> = RefCell::new(Resizer::new());
 }
 
 #[derive(Clone)]
@@ -68,18 +74,22 @@ impl Tile {
     }
 
     pub(crate) fn frame_count(&self) -> u64 {
-        match self {
-            Tile::Vid(vid_tile) => {
-                debug_assert!(
-                    (vid_tile.end_frame_index as i64 - vid_tile.start_frame_index as i64) >= 0,
-                    "{} - starts at {} but ends at {}",
-                    vid_tile.source_path,
-                    vid_tile.start_frame_index,
-                    vid_tile.end_frame_index
-                );
-                (vid_tile.end_frame_index - vid_tile.start_frame_index) as u64
+        if CONFIG.force_static_tiles {
+            1
+        } else {
+            match self {
+                Tile::Vid(vid_tile) => {
+                    debug_assert!(
+                        (vid_tile.end_frame_index as i64 - vid_tile.start_frame_index as i64) >= 0,
+                        "{} - starts at {} but ends at {}",
+                        vid_tile.source_path,
+                        vid_tile.start_frame_index,
+                        vid_tile.end_frame_index
+                    );
+                    (vid_tile.end_frame_index - vid_tile.start_frame_index) as u64
+                }
+                _ => 1,
             }
-            _ => 1,
         }
     }
 }

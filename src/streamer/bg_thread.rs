@@ -1,21 +1,25 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-    mpsc::{Receiver, Sender},
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc::{Receiver, Sender},
+    },
 };
 
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 use rayon::prelude::*;
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxBuildHasher, FxHashSet};
 
 use crate::{
     config::CONFIG,
     mosaic::tiles::Tile,
-    streamer::tile_stores::TileStore,
+    streamer::tile_stores::{TileStore, tile_size_to_store_index},
     types::DenseIndex,
     util::{benchmark, is_power_of_two},
 };
 
+#[derive(Debug)]
 pub(crate) enum StreamingMessage {
     Init,
     CycleStart {
@@ -25,6 +29,7 @@ pub(crate) enum StreamingMessage {
     },
     CycleEnd {
         after_ram_bytes: u64,
+        did_onscreen_tiles_change: bool,
     },
     Shutdown,
 }
@@ -38,16 +43,15 @@ struct CachedTileJob {
 ///i'm sorry, clippy...
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn streamer_thread(
-    parent_reciever: Receiver<StreamingMessage>,
+    parent_receiver: Receiver<StreamingMessage>,
     child_sender: Sender<StreamingMessage>,
     kill_flag_ref: Arc<AtomicBool>,
-    onscreen_set_ref: Arc<Mutex<FxHashSet<DenseIndex>>>,
+    onscreen_set_ref: Arc<RwLock<FxHashSet<DenseIndex>>>,
     tile_stores_ref: Arc<[TileStore]>,
     tiles_ref: Arc<[Tile]>,
     fast_limit: u64,
     res_limit: u64,
 ) {
-    let ts_to_si = |tile_size: u64| (tile_size / 2).ilog2() as usize;
     let probe_supertile = |tile_idx: DenseIndex, min_size: u64| -> Option<u64> {
         for store in tile_stores_ref
             .iter()
@@ -68,7 +72,7 @@ pub(crate) fn streamer_thread(
     end_job(StreamingMessage::Init);
 
     loop {
-        let (tile_size, before_ram_bytes, ram_limit_bytes) = match parent_reciever
+        let (tile_size, before_ram_bytes, ram_limit_bytes) = match parent_receiver
             .recv()
             .expect("streamer should keep bg channel open")
         {
@@ -78,7 +82,7 @@ pub(crate) fn streamer_thread(
                 ram_limit_bytes,
             } => (tile_size, before_ram_bytes, ram_limit_bytes),
             StreamingMessage::Shutdown => return,
-            _ => panic!("bg thread recieved invalid message from streamer"),
+            invalid_message => panic!("bg thread received {invalid_message:?} from streamer"),
         };
         println!("stream started");
 
@@ -88,8 +92,8 @@ pub(crate) fn streamer_thread(
         );
 
         let difference = onscreen_set_ref
-            .lock()
-            .difference(&tile_stores_ref[ts_to_si(tile_size)].read_tracker())
+            .read()
+            .difference(&tile_stores_ref[tile_size_to_store_index(tile_size)].read_tracker())
             .copied()
             .collect::<Vec<_>>();
 
@@ -97,6 +101,7 @@ pub(crate) fn streamer_thread(
             println!("stream ended - no difference");
             end_job(StreamingMessage::CycleEnd {
                 after_ram_bytes: before_ram_bytes,
+                did_onscreen_tiles_change: false,
             });
             continue;
         }
@@ -118,10 +123,6 @@ pub(crate) fn streamer_thread(
                     Tile::Pic(_) => pic_tiles.push(idx),
                     Tile::Vid(_) => vid_tiles.push(idx),
                 }
-                cached_tiles.push(CachedTileJob {
-                    idx,
-                    supertile_size: super_res,
-                })
             }
         }
 
@@ -129,25 +130,77 @@ pub(crate) fn streamer_thread(
             println!("stream ended - kill flag 1");
             end_job(StreamingMessage::CycleEnd {
                 after_ram_bytes: before_ram_bytes,
+                did_onscreen_tiles_change: false,
             });
         }
 
-        let (a, b) = rayon::join(
+        if !cached_tiles.is_empty() {
+            benchmark(
+                &format!(
+                    "downscaling {} tiles to {tile_size}x{tile_size}",
+                    cached_tiles.len()
+                ),
+                || {
+                    let mut grouped = HashMap::<_, Vec<DenseIndex>, _>::with_hasher(FxBuildHasher);
+                    for job in cached_tiles.into_iter() {
+                        grouped.entry(job.supertile_size).or_default().push(job.idx);
+                    }
+                    for (res, group) in grouped {
+                        tile_stores_ref[tile_size_to_store_index(res)].downscale_tiles(
+                            &group,
+                            &tile_stores_ref[tile_size_to_store_index(tile_size)],
+                        );
+                    }
+                },
+            );
+        }
+
+        rayon::join(
             || {
                 benchmark(
                     &format!("streaming in {} pictures at {super_res}x{super_res}", {
                         pic_tiles.len()
                     }),
                     || {
-                        pic_tiles
-                            .par_iter()
-                            .map(|idx| {
-                                tiles_ref[idx.0 as usize]
-                                    .as_pic()
-                                    .stream_in(super_res)
-                                    .expect("temp")
+                        let pics = pic_tiles
+                            .into_par_iter()
+                            .filter_map(|idx| {
+                                //skip decoding the image if asked to stop early
+                                if kill_flag_ref.load(Ordering::Relaxed) {
+                                    return None;
+                                }
+                                let res = (
+                                    idx,
+                                    tiles_ref[idx.0 as usize]
+                                        .as_pic()
+                                        .stream_in(super_res)
+                                        //maybe we could skip this tile, but if it was loaded in and processed before,
+                                        //that means the image is fine and it's the streaming that's wonky...
+                                        .unwrap_or_else(|_| {
+                                            panic!("could not stream in pic tile {idx:?}")
+                                        }),
+                                );
+                                Some(res)
                             })
-                            .collect::<Vec<_>>()
+                            .collect::<Vec<_>>();
+
+                        let converted = pics
+                            .iter()
+                            .map(|(i, f)| (*i, std::slice::from_ref(f)))
+                            .collect::<Vec<_>>();
+
+                        tile_stores_ref[tile_size_to_store_index(super_res)]
+                            .write_tiles(&converted);
+
+                        //skip downscaling if asked to stop early
+                        if kill_flag_ref.load(Ordering::Relaxed) || super_res == tile_size {
+                            return;
+                        }
+
+                        tile_stores_ref[tile_size_to_store_index(super_res)].downscale_tiles(
+                            &converted.iter().map(|(i, _)| *i).collect::<Vec<_>>(),
+                            &tile_stores_ref[tile_size_to_store_index(tile_size)],
+                        );
                     },
                 )
             },
@@ -157,6 +210,7 @@ pub(crate) fn streamer_thread(
         println!("stream ended - end of loop");
         end_job(StreamingMessage::CycleEnd {
             after_ram_bytes: before_ram_bytes,
+            did_onscreen_tiles_change: true,
         });
     }
 }

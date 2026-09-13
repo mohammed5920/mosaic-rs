@@ -2,7 +2,7 @@ use std::{fs, sync::Arc};
 
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::{config::CONFIG, mosaic::Mosaic, types::DenseIndex};
+use crate::{config::CONFIG, mosaic::Mosaic, types::DenseIndex, util::gpu_util::create_texture};
 
 pub(crate) struct Renderer {
     ///the gpu
@@ -136,25 +136,32 @@ impl Renderer {
     pub(crate) fn bind_resources(
         &mut self,
         camera_buffer: &wgpu::Buffer,
-        palette_view: wgpu::TextureView,
         mosaic: &Mosaic,
+        pager_view: &wgpu::TextureView,
+        atlas_y_view: &wgpu::TextureView,
+        atlas_cbcr_view: &wgpu::TextureView,
     ) {
-        //create the mosaic texture
-        let mosaic_texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("saic_Mosaic Texture"),
-            size: wgpu::Extent3d {
-                width: mosaic.width() as u32,
-                height: mosaic.height() as u32,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R32Uint,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        let mosaic_view = mosaic_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let (mosaic_view, mosaic_texture) = create_texture(
+            &self.device,
+            &self.queue,
+            "saic_Mosaic Texture",
+            mosaic.width() as u32,
+            mosaic.height() as u32,
+            wgpu::TextureFormat::R32Uint,
+            None,
+        );
+
+        let palette_raw = mosaic.generate_palette();
+        let palette_dim = (palette_raw.len() as f64).sqrt().ceil();
+        let (palette_view, _) = create_texture(
+            &self.device,
+            &self.queue,
+            "saic_Palette Texture",
+            palette_dim as u32,
+            palette_dim as u32,
+            wgpu::TextureFormat::Rgba8Unorm,
+            Some((bytemuck::cast_slice(&palette_raw), 4)),
+        );
 
         self.rendering_bind_group =
             Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -172,6 +179,18 @@ impl Renderer {
                     wgpu::BindGroupEntry {
                         binding: 2,
                         resource: wgpu::BindingResource::TextureView(&palette_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(pager_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(atlas_y_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::TextureView(atlas_cbcr_view),
                     },
                 ],
             }));

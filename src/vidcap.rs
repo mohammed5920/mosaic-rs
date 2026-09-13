@@ -1,28 +1,23 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use camino::Utf8PathBuf;
 use ffmpeg_next as ffmpeg;
 
 use crate::util::vid_util::{extract_plane, frame_idx_from_pts};
 
-//it is sometimes cheaper to fast forward a video to a given frame idx
-//rather than explicitly seek to it
-//depending on the gap between where the current frame is vs the target frame
-//how big is that gap? not easily discoverable, changes per video and sometimes while playing
-//so this is a best effort guess
 pub(crate) struct NvVideoFrame {
     width: u64,
     height: u64,
     frame_index: i64,
-    y: Rc<[u8]>,
-    cb_cr: Rc<[u8]>,
+    y: Arc<[u8]>,
+    cb_cr: Arc<[u8]>,
 }
 
 pub(crate) struct RgbVideoFrame {
     width: u64,
     height: u64,
     frame_index: i64,
-    pub(crate) rgb: Rc<[u8]>,
+    pub(crate) rgb: Vec<u8>,
 }
 
 pub(crate) struct VideoCapture {
@@ -255,7 +250,7 @@ impl VideoCapture {
         Ok(Some(RgbVideoFrame {
             width: out_width,
             height: out_height,
-            rgb: extract_plane(data, stride, x_start, y_start, out_width, out_height, 3).into(),
+            rgb: extract_plane(data, stride, x_start, y_start, out_width, out_height, 3),
             frame_index: frame_idx,
         }))
     }

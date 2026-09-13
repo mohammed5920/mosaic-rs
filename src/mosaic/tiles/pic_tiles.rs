@@ -2,15 +2,20 @@ use std::fs;
 
 use anyhow::{Context, bail};
 use camino::Utf8PathBuf;
-use image::{DynamicImage, ImageReader, imageops::FilterType};
+use fast_image_resize::{
+    FilterType, PixelType, ResizeAlg::Convolution, ResizeOptions, images::Image as FRImage,
+};
+use image::{DynamicImage, ImageReader, RgbImage};
 use imohash::Hasher as ImoHasher;
 use yuv::{
-    YuvBiPlanarImageMut, YuvChromaSubsampling, YuvConversionMode, YuvRange,
-    YuvStandardMatrix, rgb_to_yuv_nv12,
+    YuvBiPlanarImageMut, YuvChromaSubsampling, YuvConversionMode, YuvRange, YuvStandardMatrix,
+    rgb_to_yuv_nv12,
 };
 
 use crate::{
-    config::CONFIG, mosaic::tiles::calc_average_colour, streamer::tile_stores::StoreFrame,
+    config::CONFIG,
+    mosaic::tiles::{RESIZER, calc_average_colour},
+    streamer::tile_stores::StoreFrame,
 };
 
 #[derive(bincode::Decode, bincode::Encode, Clone)]
@@ -27,20 +32,34 @@ enum CachedPicTile {
 
 fn open_image(path: &str) -> anyhow::Result<DynamicImage> {
     let res = ImageReader::open(path)
-        .with_context(|| format!("Error opening {path}"))?
+        .with_context(|| format!("error opening {path}"))?
         .with_guessed_format()
-        .with_context(|| format!("Error guessing {path}"))?
+        .with_context(|| format!("error guessing {path}"))?
         .decode()
-        .with_context(|| format!("Error decoding {path}"))?;
+        .with_context(|| format!("error decoding {path}"))?;
     Ok(res)
 }
 
-fn image_to_tile(image: &DynamicImage, tile_size: u64) -> DynamicImage {
-    let min_dim = image.width().min(image.height());
-    let x_offset = (image.width() - min_dim) / 2;
-    let y_offset = (image.height() - min_dim) / 2;
-    let cropped = image.crop_imm(x_offset, y_offset, min_dim as u32, min_dim as u32);
-    cropped.resize(tile_size as u32, tile_size as u32, FilterType::Nearest)
+fn image_to_tile(rgb_image: &RgbImage, tile_size: u64) -> FRImage<'_> {
+    let min_dim = rgb_image.width().min(rgb_image.height());
+    let x_offset = (rgb_image.width() - min_dim) / 2;
+    let y_offset = (rgb_image.height() - min_dim) / 2;
+
+    let mut dst_image = FRImage::new(tile_size as u32, tile_size as u32, PixelType::U8x3);
+
+    let mut options = ResizeOptions::new().crop(
+        x_offset as f64,
+        y_offset as f64,
+        min_dim as f64,
+        min_dim as f64,
+    );
+    options.algorithm = Convolution(FilterType::Bilinear);
+
+    RESIZER
+        .with_borrow_mut(|r| r.resize(rgb_image, &mut dst_image, &options))
+        .expect("resizing options should be set correctly");
+
+    dst_image
 }
 
 impl PicTile {
@@ -73,11 +92,7 @@ impl PicTile {
 
         let res = match open_image(path.as_str()) {
             Ok(decoded) => CachedPicTile::Valid(PicTile {
-                average_colour: calc_average_colour(
-                    &image_to_tile(&decoded, CONFIG.tile_base_res.get())
-                        .into_rgb8()
-                        .into_raw(),
-                ),
+                average_colour: calc_average_colour(&decoded.into_rgb8().into_raw()),
                 source_path: path.to_string(),
             }),
             Err(e) => CachedPicTile::Unreadable {
@@ -96,26 +111,25 @@ impl PicTile {
     }
 
     pub(crate) fn stream_in(&self, tile_size: u64) -> anyhow::Result<StoreFrame> {
-        let rgb_tile = image_to_tile(&open_image(&self.source_path)?, tile_size);
-        let mut planar_image: YuvBiPlanarImageMut<'_, u8> = YuvBiPlanarImageMut::<u8>::alloc(
+        let rgb_image = open_image(&self.source_path)?.into_rgb8();
+        let rgb_tile = image_to_tile(&rgb_image, tile_size);
+        let mut planar_image = YuvBiPlanarImageMut::<u8>::alloc(
             tile_size as u32,
             tile_size as u32,
             YuvChromaSubsampling::Yuv420,
         );
         rgb_to_yuv_nv12(
             &mut planar_image,
-            &rgb_tile.into_rgb8().into_raw(),
+            rgb_tile.buffer(),
             (tile_size as u32) * 3,
             YuvRange::Limited,
             YuvStandardMatrix::Bt601,
             YuvConversionMode::Fast,
         )?;
-        let YuvBiPlanarImageMut {
-            y_plane, uv_plane, ..
-        } = planar_image;
+
         Ok(StoreFrame::new(
-            y_plane.borrow().into(),
-            uv_plane.borrow().into(),
+            planar_image.y_plane.borrow().into(),
+            planar_image.uv_plane.borrow().into(),
             tile_size,
         ))
     }

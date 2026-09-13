@@ -35,6 +35,7 @@ struct InputState {
     is_clicked: bool,
     clicked_cursor_pos: Option<(f64, f64)>,
     is_playing: bool,
+    is_minimised: bool,
 }
 
 struct AppState {
@@ -109,8 +110,14 @@ impl ApplicationHandler for App {
             res_limit,
         );
 
-        renderer.bind_resources(&camera.buffer, streamer.palette_view.clone(), &mosaic);
-        renderer.update_mosaic_texture(&mosaic.dense_matches());
+        renderer.bind_resources(
+            &camera.buffer,
+            &mosaic,
+            &streamer.pager_view,
+            &streamer.atlas_y_view,
+            &streamer.atlas_cbcr_view,
+        );
+        renderer.update_mosaic_texture(mosaic.dense_matches());
 
         if CONFIG.end_after_init {
             exit(0);
@@ -127,6 +134,7 @@ impl ApplicationHandler for App {
                 clicked_cursor_pos: None,
                 is_playing: true,
                 is_clicked: false,
+                is_minimised: false,
             },
         });
     }
@@ -135,9 +143,14 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::Resized(size) => {
                 let s = self.state();
-                s.camera.resize(size);
-                s.streamer.update_visibility(&s.camera, &s.mosaic);
-                s.renderer.resize(size)
+                if size.width > 0 && size.height > 0 {
+                    s.input.is_minimised = false;
+                    s.camera.resize(size);
+                    s.streamer.update_visibility(&s.camera, &s.mosaic);
+                    s.renderer.resize(size)
+                } else {
+                    s.input.is_minimised = true;
+                }
             }
 
             WindowEvent::CursorMoved { position, .. } => {
@@ -217,9 +230,12 @@ impl ApplicationHandler for App {
 
             WindowEvent::RedrawRequested => {
                 let s = self.state();
-                s.streamer.check_refresh(s.camera.get_onscreen_tile_size());
-                s.renderer.render();
-                s.window.request_redraw();
+                if !s.input.is_minimised {
+                    s.streamer.write_atlas(&s.renderer.queue, &s.camera, 0);
+                    s.streamer.check_refresh(s.camera.get_onscreen_tile_size());
+                    s.renderer.render();
+                    s.window.request_redraw();
+                }
             }
 
             WindowEvent::CloseRequested => {

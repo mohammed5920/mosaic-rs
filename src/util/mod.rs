@@ -1,5 +1,6 @@
 pub(crate) mod bb_util;
 pub(crate) mod file_util;
+pub(crate) mod gpu_util;
 pub(crate) mod vid_util;
 
 use std::time::Instant;

@@ -2,7 +2,7 @@ use anyhow::{Context, anyhow};
 use camino::Utf8PathBuf;
 
 use crate::{
-    mosaic::media_source::pic_source::PicSource,
+    mosaic::media_source::{pic_source::PicSource, vid_source::VidSource},
     util::file_util::{MediaType, check_supported_extension},
 };
 
@@ -11,7 +11,7 @@ pub(crate) mod vid_source;
 
 pub(crate) enum Source {
     Pic(PicSource),
-    Vid,
+    Vid(VidSource),
 }
 
 impl Source {
@@ -22,7 +22,7 @@ impl Source {
                     format!("Error while opening {path} as source")
                 })?))
             }
-            MediaType::Vid => todo!(),
+            MediaType::Vid => Ok(Source::Vid(VidSource::new(path))),
             MediaType::Etc => Err(anyhow!("Unrecognised source extension")),
         }
     }

@@ -1,4 +1,4 @@
-use std::{rc::Rc, sync::Arc};
+use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 
@@ -14,7 +14,7 @@ pub(crate) struct StaticMosaic {
     ///filtered down to only the tiles used in the mosaic, accessed via DenseIndex
     pub(crate) tiles: Arc<[Tile]>,
     ///array of len(source.width*source.height) of all dense (filtered down) match indices
-    pub(crate) dense_matches: Arc<[DenseIndex]>,
+    pub(crate) dense_matches: Vec<DenseIndex>,
 }
 
 impl StaticMosaic {

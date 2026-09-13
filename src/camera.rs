@@ -100,9 +100,7 @@ impl AppCameraWrapper {
     pub(crate) fn get_onscreen_tile_size(&self) -> u64 {
         let zs = self.inner.zoom_steps;
         let zo = self.inner.steps_per_octave as i32;
-        2f64.powi((zs + zo - 1) / zo)
-            .max(1.0)
-            .min(self.res_limit as f64) as u64
+        2f64.powi((zs + zo - 1) / zo).max(1.0) as u64
     }
 
     ///is zoomed higher than 100%?
