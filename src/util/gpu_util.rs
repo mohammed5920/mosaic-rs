@@ -23,7 +23,7 @@ pub(crate) fn create_texture(
         view_formats: &[],
     });
     if let Some((buff, bpp)) = init {
-        write_texture(queue, &texture, buff, bpp);
+        write_texture(queue, &texture, buff, bpp, None);
     }
     (
         texture.create_view(&wgpu::TextureViewDescriptor::default()),
@@ -31,7 +31,13 @@ pub(crate) fn create_texture(
     )
 }
 
-pub(crate) fn write_texture(queue: &wgpu::Queue, texture: &wgpu::Texture, data: &[u8], bpp: u32) {
+pub(crate) fn write_texture(
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    data: &[u8],
+    bpp: u32,
+    height_limit: Option<usize>,
+) {
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {
             texture: texture,
@@ -39,7 +45,9 @@ pub(crate) fn write_texture(queue: &wgpu::Queue, texture: &wgpu::Texture, data: 
             origin: wgpu::Origin3d::ZERO,
             aspect: wgpu::TextureAspect::All,
         },
-        data,
+        height_limit
+            .map(|hl| &data[..texture.width() as usize * bpp as usize * hl])
+            .unwrap_or(data),
         wgpu::TexelCopyBufferLayout {
             offset: 0,
             bytes_per_row: Some(bpp * texture.width()),
@@ -47,8 +55,30 @@ pub(crate) fn write_texture(queue: &wgpu::Queue, texture: &wgpu::Texture, data: 
         },
         wgpu::Extent3d {
             width: texture.width(),
-            height: texture.height(),
+            height: height_limit.unwrap_or(texture.height() as usize) as u32,
             depth_or_array_layers: 1,
         },
     );
+}
+
+pub(crate) fn copy_tile_into_atlas(
+    dst: &mut [u8],
+    src: &[u8],
+    index: usize,
+    tiles_per_row: usize,
+    tile_size_px: usize,
+    bpp: usize,
+    atlas_width: usize,
+) {
+    let atlas_stride_bytes = atlas_width * bpp;
+    let tile_size_bytes = tile_size_px * bpp;
+    let dst_row_start = (index / tiles_per_row) * tile_size_px * atlas_stride_bytes;
+    let dst_col_start = (index % tiles_per_row) * tile_size_bytes;
+
+    for row in 0..tile_size_px {
+        let src_off = row * tile_size_bytes;
+        let dst_off = dst_row_start + dst_col_start + row * atlas_stride_bytes;
+        dst[dst_off..dst_off + tile_size_bytes]
+            .copy_from_slice(&src[src_off..src_off + tile_size_bytes]);
+    }
 }

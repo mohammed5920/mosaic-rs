@@ -48,7 +48,14 @@ impl Renderer {
             .expect("cannot request adapter");
 
         let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor::default())
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("saic_Deivce"),
+                required_limits: wgpu::Limits {
+                    max_texture_dimension_2d: adapter.limits().max_texture_dimension_2d,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
             .await
             .expect("cannot request device & queue");
 

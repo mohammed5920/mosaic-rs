@@ -23,7 +23,7 @@ use crate::{
     types::{Bb, DenseIndex, StoreIndex},
     util::{
         bb_util::subtract_rect,
-        gpu_util::{create_texture, write_texture},
+        gpu_util::{copy_tile_into_atlas, create_texture, write_texture},
     },
 };
 
@@ -117,16 +117,10 @@ impl Streamer {
         );
 
         //create cpu side copies of each atlas
-        let pager_buff =
-            vec![0u32; (pager_texture.width() * pager_texture.height()) as usize];
-        let atlas_y_buff =
-            vec![0u8; (atlas_y_texture.width() * atlas_y_texture.height()) as usize];
+        let pager_buff = vec![0u32; (pager_texture.width() * pager_texture.height()) as usize];
+        let atlas_y_buff = vec![0u8; (atlas_y_texture.width() * atlas_y_texture.height()) as usize];
         let atlas_cbcr_buff =
-            vec![
-                0u8;
-                (atlas_cbcr_texture.width() * atlas_cbcr_texture.height()) as usize * 2
-            ];
-
+            vec![0u8; (atlas_cbcr_texture.width() * atlas_cbcr_texture.height()) as usize * 2];
 
         //initialise stores
         //size of 2 arrays at current size + tile dictionary at 4x(default) the screen resolution * avg no. of frames per tile
@@ -337,60 +331,47 @@ impl Streamer {
         }
         self.is_atlas_dirty = false;
         let visible_guard = self.visibility_set.read();
+        let mut resident_count = 0;
+
+        let y_width = self.atlas_y_texture.width() as usize;
+        let y_tiles_per_row = y_width / tile_size;
+
+        let cbcr_bpp = 2;
+        let cbcr_tile_size_px = tile_size / 2;
+        let cbcr_width = self.atlas_cbcr_texture.width() as usize;
+        let cbcr_tiles_per_row = self.atlas_cbcr_texture.width() as usize / cbcr_tile_size_px;
 
         self.stores[tile_size_to_store_index(tile_size as u64)].with_tiles(
             &mut visible_guard.iter().copied(),
             frame_offset,
             |results| {
-                let mut resident_count = 1;
                 for (tile_index, result) in results {
                     match result {
-                        tile_stores::ReadTileResult::Vacant => self.pager_buff[tile_index.0 as usize] = 0u32,
+                        tile_stores::ReadTileResult::Vacant => {
+                            self.pager_buff[tile_index.0 as usize] = 0u32;
+                        }
                         tile_stores::ReadTileResult::Resident { y, cb_cr } => {
-                            //write the pager
-                            self.pager_buff[tile_index.0 as usize] = resident_count as u32;
-                            //write atlas y
-                            let y_atlas_stride = self.atlas_y_texture.width() as usize;
-                            let y_tiles_per_row = y_atlas_stride / tile_size;
-                            let y_tile_vertical_offset = ((resident_count - 1) / y_tiles_per_row)
-                                * y_atlas_stride
-                                * tile_size;
-                            let y_tile_horizontal_offset =
-                                ((resident_count - 1) % y_tiles_per_row) * tile_size;
-                            for row in 0..tile_size {
-                                let src_offset = row * tile_size;
-                                let row_offset = y_tile_vertical_offset
-                                    + y_tile_horizontal_offset
-                                    + y_atlas_stride * row;
-                                self.atlas_y_buff[row_offset..row_offset + tile_size]
-                                    .copy_from_slice(&y[src_offset..src_offset + tile_size]);
-                            }
-                            // write atlas cbcr
-                            let cbcr_bpp = 2;
-                            let cbcr_atlas_stride =
-                                self.atlas_cbcr_texture.width() as usize * cbcr_bpp;
-                            let cbcr_tile_size_px = tile_size / 2;
-                            let cbcr_tile_size_bytes = cbcr_tile_size_px * cbcr_bpp;
-                            let cbcr_tiles_per_row =
-                                self.atlas_cbcr_texture.width() as usize / cbcr_tile_size_px;
+                            self.pager_buff[tile_index.0 as usize] = (resident_count as u32) + 1;
 
-                            let cbcr_tile_vertical_offset = ((resident_count - 1)
-                                / cbcr_tiles_per_row)
-                                * cbcr_tile_size_px
-                                * cbcr_atlas_stride;
-                            let cbcr_tile_horizontal_offset =
-                                ((resident_count - 1) % cbcr_tiles_per_row) * cbcr_tile_size_bytes;
+                            copy_tile_into_atlas(
+                                &mut self.atlas_y_buff,
+                                y,
+                                resident_count,
+                                y_tiles_per_row,
+                                tile_size,
+                                1,
+                                y_width,
+                            );
+                            copy_tile_into_atlas(
+                                &mut self.atlas_cbcr_buff,
+                                cb_cr,
+                                resident_count,
+                                cbcr_tiles_per_row,
+                                cbcr_tile_size_px,
+                                cbcr_bpp,
+                                cbcr_width,
+                            );
 
-                            for row in 0..cbcr_tile_size_px {
-                                let row_offset = cbcr_tile_vertical_offset
-                                    + cbcr_tile_horizontal_offset
-                                    + cbcr_atlas_stride * row;
-                                let src_offset = row * cbcr_tile_size_bytes;
-                                self.atlas_cbcr_buff[row_offset..row_offset + cbcr_tile_size_bytes]
-                                    .copy_from_slice(
-                                        &cb_cr[src_offset..src_offset + cbcr_tile_size_bytes],
-                                    );
-                            }
                             resident_count += 1;
                         }
                     }
@@ -403,18 +384,25 @@ impl Streamer {
             &self.pager_texture,
             bytemuck::cast_slice(&self.pager_buff),
             4,
+            None,
         );
-        write_texture(
-            queue,
-            &self.atlas_y_texture,
-            bytemuck::cast_slice(&self.atlas_y_buff),
-            1,
-        );
-        write_texture(
-            queue,
-            &self.atlas_cbcr_texture,
-            bytemuck::cast_slice(&self.atlas_cbcr_buff),
-            2,
-        );
+        if resident_count > 0 {
+            let tiles_per_row = self.atlas_y_texture.width() as usize / tile_size;
+            let height_limit = resident_count.div_ceil(tiles_per_row) * tile_size;
+            write_texture(
+                queue,
+                &self.atlas_y_texture,
+                bytemuck::cast_slice(&self.atlas_y_buff),
+                1,
+                Some(height_limit),
+            );
+            write_texture(
+                queue,
+                &self.atlas_cbcr_texture,
+                bytemuck::cast_slice(&self.atlas_cbcr_buff),
+                2,
+                Some(height_limit / 2),
+            );
+        }
     }
 }

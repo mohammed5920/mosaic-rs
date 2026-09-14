@@ -120,8 +120,8 @@ pub(crate) fn streamer_thread(
                 });
             } else {
                 match tiles_ref[idx.0 as usize] {
-                    Tile::Pic(_) => pic_tiles.push(idx),
-                    Tile::Vid(_) => vid_tiles.push(idx),
+                    Tile::Pic(ref p) => pic_tiles.push((idx, p)),
+                    Tile::Vid(ref v) => vid_tiles.push((idx, v)),
                 }
             }
         }
@@ -162,18 +162,20 @@ pub(crate) fn streamer_thread(
                         pic_tiles.len()
                     }),
                     || {
+                        if pic_tiles.is_empty() {
+                            return;
+                        }
+
                         let pics = pic_tiles
                             .into_par_iter()
-                            .filter_map(|idx| {
+                            .filter_map(|(idx, p)| {
                                 //skip decoding the image if asked to stop early
                                 if kill_flag_ref.load(Ordering::Relaxed) {
                                     return None;
                                 }
                                 let res = (
                                     idx,
-                                    tiles_ref[idx.0 as usize]
-                                        .as_pic()
-                                        .stream_in(super_res)
+                                    p.stream_in(super_res)
                                         //maybe we could skip this tile, but if it was loaded in and processed before,
                                         //that means the image is fine and it's the streaming that's wonky...
                                         .unwrap_or_else(|_| {
@@ -204,7 +206,18 @@ pub(crate) fn streamer_thread(
                     },
                 )
             },
-            || {},
+            || {
+                benchmark(
+                    &format!("streaming in {} videos at {super_res}x{super_res}", {
+                        vid_tiles.len()
+                    }),
+                    || {
+                        if vid_tiles.is_empty() {
+                            return;
+                        }
+                    },
+                )
+            },
         );
 
         println!("stream ended - end of loop");
