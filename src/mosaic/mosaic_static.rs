@@ -1,15 +1,18 @@
 use std::sync::Arc;
 
+use camino::Utf8PathBuf;
+use image::ImageReader;
 use rustc_hash::FxHashMap;
 
 use crate::{
-    mosaic::{matchmaker::MatchMaker, media_source::pic_source::PicSource, tiles::Tile},
+    mosaic::{matchmaker::MatchMaker, tiles::Tile},
     types::DenseIndex,
     util::{benchmark, vec_unique},
 };
 
 pub(crate) struct StaticMosaic {
-    pub(crate) source: PicSource,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
     ///filtered down to only the tiles used in the mosaic, accessed via DenseIndex
     pub(crate) tiles: Arc<[Tile]>,
     ///array of len(source.width*source.height) of all dense (filtered down) match indices
@@ -17,10 +20,17 @@ pub(crate) struct StaticMosaic {
 }
 
 impl StaticMosaic {
-    pub(crate) fn new(pic_source: PicSource, tiles: Vec<Tile>, matchmaker: MatchMaker) -> Self {
-        let made_matches = benchmark("making matches", || {
-            matchmaker.matchmake(&pic_source.pixels)
-        });
+    pub(crate) fn new(
+        source_path: Utf8PathBuf,
+        tiles: Vec<Tile>,
+        matchmaker: MatchMaker,
+    ) -> anyhow::Result<Self> {
+        let source = ImageReader::open(source_path)?
+            .with_guessed_format()?
+            .decode()?
+            .into_rgb8();
+
+        let made_matches = benchmark("making matches", || matchmaker.matchmake(source.as_raw()));
 
         let (new_tiles, dense_matches) = benchmark("filtering static mosaic", || {
             let unique_matches = {
@@ -44,14 +54,11 @@ impl StaticMosaic {
             (new_tiles, dense_matches)
         });
 
-        Self {
-            source: pic_source,
+        Ok(Self {
             tiles: new_tiles.into(),
             dense_matches,
-        }
-    }
-
-    pub(crate) fn total_tile_frames(&self) -> u64 {
-        self.tiles.iter().map(|tile| tile.frame_count()).sum()
+            width: source.width(),
+            height: source.height(),
+        })
     }
 }

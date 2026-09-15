@@ -59,6 +59,10 @@ impl PicTile {
         })
     }
 
+    pub(crate) fn frame_count(&self) -> u64 {
+        1
+    }
+
     pub(crate) fn stream_in(&self, tile_size: u64) -> anyhow::Result<StoreFrame> {
         let rgb_image = open_image(&self.source_path)
             .map_err(|e| anyhow!(e))?

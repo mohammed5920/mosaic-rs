@@ -53,24 +53,15 @@ pub(crate) enum Tile {
 impl Tile {
     pub(crate) fn average_colour(&self) -> [u8; 3] {
         match self {
-            Tile::Pic(pic_tile) => pic_tile.average_colour,
-            Tile::Vid(vid_tile) => vid_tile.average_colour,
+            Tile::Pic(p) => p.average_colour,
+            Tile::Vid(v) => v.average_colour,
         }
     }
 
     pub(crate) fn frame_count(&self) -> u64 {
         match self {
-            Tile::Vid(vid_tile) => {
-                debug_assert!(
-                    (vid_tile.end_frame_index() as i64 - vid_tile.start_frame_index as i64) >= 0,
-                    "{} - starts at {} but ends at {}",
-                    vid_tile.source_path,
-                    vid_tile.start_frame_index,
-                    vid_tile.end_frame_index()
-                );
-                (vid_tile.end_frame_index() - vid_tile.start_frame_index) as u64
-            }
-            _ => 1,
+            Tile::Vid(v) => v.frame_count(),
+            Tile::Pic(p) => p.frame_count(),
         }
     }
 }

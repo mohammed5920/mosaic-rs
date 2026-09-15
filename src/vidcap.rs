@@ -3,24 +3,24 @@ use std::sync::Arc;
 use camino::Utf8Path;
 use ffmpeg_next as ffmpeg;
 
-use crate::util::vid_util::{extract_plane, frame_idx_from_pts};
+use crate::{
+    config::CONFIG,
+    util::vid_util::{extract_plane, frame_idx_from_pts},
+};
 
 pub(crate) struct NvVideoFrame {
-    width: u64,
-    height: u64,
-    frame_index: i64,
-    y: Arc<[u8]>,
-    cb_cr: Arc<[u8]>,
+    pub(crate) y: Vec<u8>,
+    pub(crate) cb_cr: Vec<u8>,
 }
 
 pub(crate) struct RgbVideoFrame {
-    width: u64,
-    height: u64,
-    frame_index: i64,
     pub(crate) rgb: Vec<u8>,
 }
 
 pub(crate) struct VideoCapture {
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+
     best_video_stream_index: usize,
     stream_time_base: ffmpeg::Rational,
     stream_frame_rate: ffmpeg::Rational,
@@ -41,6 +41,7 @@ impl VideoCapture {
     pub(crate) fn new(
         path: Arc<Utf8Path>,
         cropped_square_size: Option<u64>,
+        is_multithreaded: bool,
     ) -> Result<Self, ffmpeg::Error> {
         let input = ffmpeg::format::input(path.as_str())?;
 
@@ -57,7 +58,13 @@ impl VideoCapture {
         let stream_time_base = stream.time_base();
 
         let context = ffmpeg::codec::context::Context::from_parameters(stream.parameters())?;
-        let decoder = context.decoder().video()?;
+        let mut decoder = context.decoder().video()?;
+        if is_multithreaded {
+            decoder.set_threading(ffmpeg::threading::Config {
+                kind: ffmpeg::threading::Type::Frame,
+                count: 0,
+            });
+        }
 
         let in_format = decoder.format();
         let in_width = decoder.width();
@@ -94,6 +101,9 @@ impl VideoCapture {
         )?;
 
         Ok(Self {
+            width: out_w,
+            height: out_h,
+
             best_video_stream_index: stream_index,
             stream_time_base,
             stream_frame_rate,
@@ -167,11 +177,7 @@ impl VideoCapture {
     }
 
     ///this will seek such that calling the next read_frame() gives you the n=target_frame frame
-    fn seek_to_frame(
-        &mut self,
-        target_frame: i64,
-        hard_seek_threshold: u64,
-    ) -> Result<(), ffmpeg::Error> {
+    pub(crate) fn seek_to_frame(&mut self, target_frame: i64) -> Result<(), ffmpeg::Error> {
         if self
             .last_decoded_frame_index
             .is_some_and(|i| target_frame == i + 1)
@@ -183,7 +189,8 @@ impl VideoCapture {
         if self.last_decoded_frame_index.is_none_or(|i| {
             target_frame < i
                 || (target_frame - i)
-                    > hard_seek_threshold as i64 * self.stream_frame_rate.numerator() as i64
+                    > CONFIG.hard_seek_threshold.get() as i64
+                        * self.stream_frame_rate.numerator() as i64
                         / self.stream_frame_rate.denominator() as i64
         }) {
             let target_ts = target_frame * self.stream_frame_rate.denominator() as i64
@@ -220,7 +227,7 @@ impl VideoCapture {
 
     ///returns None if the video has ended
     pub(crate) fn read_rgb_frame(&mut self) -> Result<Option<RgbVideoFrame>, ffmpeg::Error> {
-        let (frame_idx, raw_frame) = match self.read_raw_frame() {
+        let (_, raw_frame) = match self.read_raw_frame() {
             Ok(None) => return Ok(None),
             Err(e) => return Err(e),
             Ok(Some(raw_frame)) => raw_frame,
@@ -248,16 +255,13 @@ impl VideoCapture {
         };
 
         Ok(Some(RgbVideoFrame {
-            width: out_width,
-            height: out_height,
             rgb: extract_plane(data, stride, x_start, y_start, out_width, out_height, 3),
-            frame_index: frame_idx,
         }))
     }
 
     ///returns None if the video has ended
-    fn read_nv_frame(&mut self) -> Result<Option<NvVideoFrame>, ffmpeg::Error> {
-        let (frame_idx, raw_frame) = match self.read_raw_frame() {
+    pub(crate) fn read_nv_frame(&mut self) -> Result<Option<NvVideoFrame>, ffmpeg::Error> {
+        let (_, raw_frame) = match self.read_raw_frame() {
             Ok(None) => return Ok(None),
             Err(e) => return Err(e),
             Ok(Some(raw_frame)) => raw_frame,
@@ -307,11 +311,8 @@ impl VideoCapture {
         );
 
         Ok(Some(NvVideoFrame {
-            width: out_width,
-            height: out_height,
-            y: y_plane.into(),
-            cb_cr: cb_cr_plane.into(),
-            frame_index: frame_idx,
+            y: y_plane,
+            cb_cr: cb_cr_plane,
         }))
     }
 }

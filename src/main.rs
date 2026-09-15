@@ -2,7 +2,7 @@
 #[allow(clippy::pedantic)]
 use ffmpeg_next as ffmpeg;
 
-use std::{process::exit, sync::Arc, thread};
+use std::{process::exit, sync::Arc, time::Instant};
 
 use winit::{
     application::ApplicationHandler,
@@ -35,6 +35,9 @@ struct InputState {
     is_clicked: bool,
     clicked_cursor_pos: Option<(f64, f64)>,
     is_playing: bool,
+    timestamp: f64,
+    last_frame_instant: Instant,
+    last_frame_index: u64,
     is_minimised: bool,
     is_debug: bool,
 }
@@ -59,6 +62,8 @@ impl App {
 impl ApplicationHandler for App {
     //NOTE: Initialiser
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        let mosaic = Mosaic::create(CONFIG.source_path.clone(), CONFIG.tile_path.clone())
+            .expect("could not create mosaic");
         let window = benchmark("creating window", || {
             Arc::new(
                 event_loop
@@ -66,18 +71,9 @@ impl ApplicationHandler for App {
                     .expect("could not create window"),
             )
         });
-        let (mosaic, mut renderer) = thread::scope(|s| {
-            let mosaic_fut = s.spawn(|| Mosaic::create(&CONFIG.source_path, &CONFIG.tile_path));
-            let renderer = benchmark("initialising GPU", || {
-                pollster::block_on(Renderer::new(window.clone()))
-            });
-            let mosaic = mosaic_fut
-                .join()
-                .expect("could not create mosaic")
-                .expect("could not create mosaic");
-            (mosaic, renderer)
+        let mut renderer = benchmark("initialising GPU", || {
+            pollster::block_on(Renderer::new(window.clone()))
         });
-
         let display_res = window
             .current_monitor()
             .expect("can't detect current screen size")
@@ -132,6 +128,9 @@ impl ApplicationHandler for App {
             input: InputState {
                 cursor_pos: (0., 0.),
                 clicked_cursor_pos: None,
+                timestamp: 0.0,
+                last_frame_index: 0,
+                last_frame_instant: Instant::now(),
                 is_playing: true,
                 is_clicked: false,
                 is_minimised: false,
@@ -212,6 +211,7 @@ impl ApplicationHandler for App {
                         is_dirty = false;
                         match something_else {
                             KeyCode::KeyE => s.input.is_debug = !s.input.is_debug,
+                            KeyCode::Space => s.input.is_playing = !s.input.is_playing,
                             _ => {}
                         }
                     }
@@ -239,9 +239,31 @@ impl ApplicationHandler for App {
             WindowEvent::RedrawRequested => {
                 let s = self.state();
                 if !s.input.is_minimised {
+                    let now = Instant::now();
+                    let dt = now.duration_since(s.input.last_frame_instant).as_secs_f64();
+                    s.input.last_frame_instant = now;
+                    if s.input.is_playing {
+                        s.input.timestamp += dt;
+                        //assuming 30fps since that's what all my videos are set at
+                        let curr_frame = (s.input.timestamp * 30.0) as u64;
+                        if curr_frame != s.input.last_frame_index {
+                            if !CONFIG.force_static_tiles {
+                                s.streamer.on_tile_offset_change();
+                            }
+                            if let Mosaic::Dynamic(_) = s.mosaic {
+                                s.mosaic.advance_frame();
+                                s.renderer.update_mosaic_texture(s.mosaic.dense_matches());
+                                s.streamer.on_mosaic_frame_change(&s.camera);
+                            }
+                            s.input.last_frame_index = curr_frame
+                        }
+                    }
                     s.streamer.check_refresh(s.camera.get_onscreen_tile_size());
-                    s.streamer
-                        .write_atlas(&s.renderer.queue, s.camera.get_onscreen_tile_size(), 0);
+                    s.streamer.write_atlas(
+                        &s.renderer.queue,
+                        s.camera.get_onscreen_tile_size(),
+                        s.input.last_frame_index,
+                    );
                     s.renderer.render(s.input.is_debug);
                     s.window.request_redraw();
                 }

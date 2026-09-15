@@ -1,21 +1,23 @@
 use std::sync::Arc;
 
+use anyhow::bail;
 use camino::Utf8PathBuf;
 
 use crate::{
     mosaic::{
         matchmaker::MatchMaker,
-        media_source::Source,
         mosaic_dynamic::DynamicMosaic,
         mosaic_static::StaticMosaic,
         tiles::{Tile, load_tiles},
     },
     types::{Bb, DenseIndex},
-    util::benchmark,
+    util::{
+        benchmark,
+        file_util::{MediaType, check_supported_extension},
+    },
 };
 
 pub(crate) mod matchmaker;
-pub(crate) mod media_source;
 pub(crate) mod mosaic_dynamic;
 pub(crate) mod mosaic_static;
 pub(crate) mod tiles;
@@ -27,15 +29,23 @@ pub(crate) enum Mosaic {
 
 impl Mosaic {
     pub(crate) fn create(
-        source_path: &Utf8PathBuf,
-        tiles_path: &Utf8PathBuf,
+        source_path: Utf8PathBuf,
+        tiles_path: Utf8PathBuf,
     ) -> anyhow::Result<Mosaic> {
-        let tiles = benchmark("loading tiles", || load_tiles(tiles_path))?;
+        let tiles = benchmark("loading tiles", || load_tiles(&tiles_path))?;
         let matchmaker = benchmark("generating match tree", || MatchMaker::new(&tiles));
-        let source = benchmark("loading source", || Source::open(source_path))?;
-        match source {
-            Source::Pic(p) => Ok(Mosaic::Static(StaticMosaic::new(p, tiles, matchmaker))),
-            Source::Vid(v) => Ok(Mosaic::Dynamic(DynamicMosaic::new(v, tiles, matchmaker))),
+        match check_supported_extension(&source_path) {
+            MediaType::Vid => Ok(Mosaic::Dynamic(DynamicMosaic::new(
+                source_path,
+                tiles,
+                matchmaker,
+            )?)),
+            MediaType::Pic => Ok(Mosaic::Static(StaticMosaic::new(
+                source_path,
+                tiles,
+                matchmaker,
+            )?)),
+            MediaType::Etc => bail!("Unrecognised source extension for {source_path}"),
         }
     }
 
@@ -44,7 +54,7 @@ impl Mosaic {
     ///(no-op for static ones)
     pub(crate) fn advance_frame(&mut self) {
         if let Mosaic::Dynamic(d) = self {
-            todo!()
+            d.advance_frame();
         };
     }
 
@@ -53,7 +63,7 @@ impl Mosaic {
     ///(not guaranteed to be frame accurate, no-op for static ones)
     pub(crate) fn seek_to_frame(&mut self, frame_idx: u64) {
         if let Mosaic::Dynamic(d) = self {
-            todo!()
+            d.seek_to_frame(frame_idx);
         };
     }
 
@@ -63,7 +73,7 @@ impl Mosaic {
     pub(crate) fn dense_matches(&self) -> &Vec<DenseIndex> {
         match self {
             Mosaic::Static(s) => &s.dense_matches,
-            Mosaic::Dynamic(d) => todo!(),
+            Mosaic::Dynamic(d) => &d.dense_matches,
         }
     }
 
@@ -93,15 +103,15 @@ impl Mosaic {
 
     pub(crate) fn width(&self) -> u64 {
         match self {
-            Mosaic::Static(s) => s.source.width,
-            Mosaic::Dynamic(d) => todo!(),
+            Mosaic::Static(s) => s.width as u64,
+            Mosaic::Dynamic(d) => d.width as u64,
         }
     }
 
     pub(crate) fn height(&self) -> u64 {
         match self {
-            Mosaic::Static(s) => s.source.height,
-            Mosaic::Dynamic(d) => todo!(),
+            Mosaic::Static(s) => s.height as u64,
+            Mosaic::Dynamic(d) => d.height as u64,
         }
     }
 
@@ -109,15 +119,12 @@ impl Mosaic {
     pub(crate) fn tiles(&self) -> Arc<[Tile]> {
         match self {
             Mosaic::Static(s) => s.tiles.clone(),
-            Mosaic::Dynamic(d) => todo!(),
+            Mosaic::Dynamic(d) => d.tiles.clone(),
         }
     }
 
     pub(crate) fn total_tile_frames(&self) -> u64 {
-        match self {
-            Mosaic::Static(s) => s.total_tile_frames(),
-            Mosaic::Dynamic(d) => todo!(),
-        }
+        self.tiles().iter().map(|tile| tile.frame_count()).sum()
     }
 
     ///palette of the first frame of only the tiles used in the mosaic

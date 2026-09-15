@@ -44,7 +44,6 @@ enum CachedResult {
 
 #[derive(Encode, Decode)]
 struct CachedEntry {
-    ///for debugging only
     hash: u128,
     inner: CachedResult,
 }

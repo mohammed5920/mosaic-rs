@@ -14,8 +14,8 @@ use rustc_hash::{FxBuildHasher, FxHashSet};
 
 use crate::{
     config::CONFIG,
-    mosaic::tiles::Tile,
-    streamer::tile_stores::{TileStore, tile_size_to_store_index},
+    mosaic::tiles::{Tile, vid_tiles::stream_tiles_from_video},
+    streamer::tile_stores::{StoreFrame, TileStore, tile_size_to_store_index},
     types::DenseIndex,
     util::{benchmark, is_power_of_two},
 };
@@ -167,7 +167,7 @@ pub(crate) fn streamer_thread(
                             return;
                         }
 
-                        let (idxs, pics) = pic_tiles
+                        let pics = pic_tiles
                             .into_par_iter()
                             .filter_map(|(idx, p)| {
                                 //skip decoding the image if asked to stop early
@@ -184,24 +184,22 @@ pub(crate) fn streamer_thread(
                                 ];
                                 Some((idx, res))
                             })
-                            .collect::<(Vec<_>, Vec<_>)>();
+                            .collect::<Vec<_>>();
 
-                        tile_stores_ref[tile_size_to_store_index(super_res)].write_tiles(
-                            pics.into_iter()
-                                .enumerate()
-                                .map(|(i, p)| (idxs[i], p))
-                                .collect(),
-                        );
+                        let idxs = pics.iter().map(|(i, _)| *i).collect::<Vec<_>>();
+                        tile_stores_ref[tile_size_to_store_index(super_res)].write_tiles(pics);
 
                         //skip downscaling if asked to stop early
                         if kill_flag_ref.load(Ordering::Relaxed) || super_res == tile_size {
                             return;
                         }
 
-                        tile_stores_ref[tile_size_to_store_index(super_res)].downscale_tiles(
-                            &idxs,
-                            &tile_stores_ref[tile_size_to_store_index(tile_size)],
-                        );
+                        if super_res != tile_size {
+                            tile_stores_ref[tile_size_to_store_index(super_res)].downscale_tiles(
+                                &idxs,
+                                &tile_stores_ref[tile_size_to_store_index(tile_size)],
+                            );
+                        }
                     },
                 )
             },
@@ -215,23 +213,49 @@ pub(crate) fn streamer_thread(
                             return;
                         }
 
-                        // //group videos
-                        // let mut videos: HashMap<Arc<Utf8Path>, Vec<_>> = HashMap::new();
-                        // for (idx, v) in vid_tiles {
-                        //     videos
-                        //         .entry(v.source_path.clone())
-                        //         .or_default()
-                        //         .push((idx, v));
-                        // }
-                        // videos
-                        //     .into_par_iter()
-                        //     .map(|(path, mut tiles)| {
-                        //         tiles.sort_unstable_by_key(|(_, t)| t.start_frame_index);
-                        //         (path, tiles)
-                        //     })
-                        //     .map(|(path, tiles)| {
-                        //         stream_tiles_from_video(&path, tiles.into_iter().map(|(_, v)| v))
-                        //     });
+                        //group videos
+                        let mut videos: HashMap<Arc<Utf8Path>, Vec<_>> = HashMap::new();
+                        for (idx, v) in vid_tiles {
+                            videos
+                                .entry(v.source_path.clone())
+                                .or_default()
+                                .push((idx, v));
+                        }
+                        let is_multithreaded =
+                            videos.len() < std::thread::available_parallelism().unwrap().get() / 2;
+                        let all: Vec<(DenseIndex, Vec<StoreFrame>)> = videos
+                            .into_par_iter()
+                            .map(|(path, mut tiles)| {
+                                tiles.sort_unstable_by_key(|(_, t)| t.start_frame_index);
+                                let frames = stream_tiles_from_video(
+                                    path.clone(),
+                                    tiles.iter().map(|(_, v)| *v),
+                                    super_res,
+                                    is_multithreaded,
+                                );
+                                frames
+                                    .into_iter()
+                                    .enumerate()
+                                    .map(|(i, frames)| (tiles[i].0, frames))
+                                    .collect::<Vec<_>>()
+                            })
+                            .flatten()
+                            .collect::<Vec<_>>();
+
+                        let idxs = all.iter().map(|(i, _)| *i).collect::<Vec<_>>();
+                        tile_stores_ref[tile_size_to_store_index(super_res)].write_tiles(all);
+
+                        //skip downscaling if asked to stop early
+                        if kill_flag_ref.load(Ordering::Relaxed) || super_res == tile_size {
+                            return;
+                        }
+
+                        if super_res != tile_size {
+                            tile_stores_ref[tile_size_to_store_index(super_res)].downscale_tiles(
+                                &idxs,
+                                &tile_stores_ref[tile_size_to_store_index(tile_size)],
+                            );
+                        }
                     },
                 )
             },

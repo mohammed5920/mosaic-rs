@@ -11,8 +11,8 @@ pub(crate) fn create_texture(
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some(debug_name),
         size: wgpu::Extent3d {
-            width: width,
-            height: height,
+            width,
+            height,
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
@@ -40,7 +40,7 @@ pub(crate) fn write_texture(
 ) {
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {
-            texture: texture,
+            texture,
             mip_level: 0,
             origin: wgpu::Origin3d::ZERO,
             aspect: wgpu::TextureAspect::All,
