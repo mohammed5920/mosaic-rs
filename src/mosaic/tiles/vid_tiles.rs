@@ -2,10 +2,7 @@ use {
     crate::{
         config::CONFIG, mosaic::tiles::calc_average_colour, streamer::tile_stores::StoreFrame,
         util::vid_util::is_fixed_frame_rate, vidcap::VideoCapture,
-    },
-    camino::Utf8Path,
-    rustc_hash::{FxBuildHasher, FxHashMap},
-    std::{collections::HashMap, sync::Arc},
+    }, camino::Utf8Path, rustc_hash::{FxBuildHasher, FxHashMap}, std::{collections::HashMap, sync::{Arc, atomic::{AtomicBool, Ordering}}},
 };
 
 #[derive(Clone)]
@@ -122,6 +119,7 @@ pub(crate) fn stream_tiles_from_video<'a>(
     tiles: impl Iterator<Item = &'a VidTile>,
     resolution: u64,
     is_multithreaded: bool,
+    kill_flag: Arc<AtomicBool>
 ) -> Vec<Vec<StoreFrame>> {
     let mut res = Vec::new();
     let mut cap = VideoCapture::new(path.clone(), Some(resolution), is_multithreaded)
@@ -147,6 +145,9 @@ pub(crate) fn stream_tiles_from_video<'a>(
             per_tile_res.push(StoreFrame::new(frame.y, frame.cb_cr, resolution));
         }
         res.push(per_tile_res);
+        if kill_flag.load(Ordering::Relaxed) {
+            break;
+        }
     }
     res
 }

@@ -244,8 +244,7 @@ impl ApplicationHandler for App {
                     s.input.last_frame_instant = now;
                     if s.input.is_playing {
                         s.input.timestamp += dt;
-                        //assuming 30fps since that's what all my videos are set at
-                        let curr_frame = (s.input.timestamp * 30.0) as u64;
+                        let curr_frame = (s.input.timestamp * 24.0) as u64;
                         if curr_frame != s.input.last_frame_index {
                             if !CONFIG.force_static_tiles {
                                 s.streamer.on_tile_offset_change();
@@ -253,11 +252,12 @@ impl ApplicationHandler for App {
                             if let Mosaic::Dynamic(_) = s.mosaic {
                                 s.mosaic.advance_frame();
                                 s.renderer.update_mosaic_texture(s.mosaic.dense_matches());
-                                s.streamer.on_mosaic_frame_change(&s.camera);
+                                s.streamer.on_mosaic_frame_change(&s.camera, &s.mosaic);
                             }
                             s.input.last_frame_index = curr_frame
                         }
                     }
+                    
                     s.streamer.check_refresh(s.camera.get_onscreen_tile_size());
                     s.streamer.write_atlas(
                         &s.renderer.queue,

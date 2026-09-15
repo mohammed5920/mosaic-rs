@@ -30,12 +30,6 @@ use crate::{
 mod bg_thread;
 pub(crate) mod tile_stores;
 
-// palette -> static
-// mosaic texture -> every video frame / static
-// atlas -> every frame
-// texture views -> every frame
-// page table -> every frame
-
 pub(crate) struct Streamer {
     ///pager encoding: 0 = not resident, > 0 = modulo'd index into atlas, + 1
     pager_buff: Vec<u32>,
@@ -227,14 +221,15 @@ impl Streamer {
         self.is_atlas_dirty = true;
     }
 
-    pub(crate) fn on_mosaic_frame_change(&mut self, camera: &AppCameraWrapper) {
+    pub(crate) fn on_mosaic_frame_change(&mut self, camera: &AppCameraWrapper, mosaic: &Mosaic) {
         self.is_streaming_dirty = true;
         self.is_atlas_dirty = true;
-        self.stream_kill_flag.store(true, Ordering::Relaxed);
-        self.last_frame_visible_bb = None;
+        // self.stream_kill_flag.store(true, Ordering::Relaxed);
         if camera.is_zoomed_in() {
+            self.last_frame_visible_bb = None;
             self.visibility_set.write().drain();
             self.visibility_map.iter_mut().for_each(|v| *v = 0);
+            self.update_visibility(camera, mosaic);
         }
     }
 
