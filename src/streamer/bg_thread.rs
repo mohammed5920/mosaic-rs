@@ -215,6 +215,15 @@ pub(crate) fn streamer_thread(
                         if vid_tiles.is_empty() {
                             return;
                         }
+
+                        //group videos
+                        let mut videos: HashMap<Arc<str>, Vec<_>> = HashMap::new();
+                        for (idx, v) in vid_tiles {
+                            videos
+                                .entry(v.source_path.clone())
+                                .or_default()
+                                .push((idx, v));
+                        }
                     },
                 )
             },

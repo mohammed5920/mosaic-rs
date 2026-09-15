@@ -60,7 +60,7 @@ pub(crate) fn load_config() -> AppConfig {
                 is_vsync: true,
                 end_after_init: false,
                 force_static_tiles: false,
-                backend: wgpu::Backend::Vulkan,
+                backend: wgpu::Backend::Gl,
 
                 difference_threshold: 300,
                 ram_percent: 75,

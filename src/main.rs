@@ -5,11 +5,7 @@ use ffmpeg_next as ffmpeg;
 use std::{process::exit, sync::Arc, thread};
 
 use winit::{
-    application::ApplicationHandler,
-    event::{KeyEvent, MouseButton, MouseScrollDelta::LineDelta, WindowEvent},
-    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
-    keyboard::{KeyCode, PhysicalKey},
-    window::{Window, WindowId},
+    application::ApplicationHandler, event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta::LineDelta, WindowEvent}, event_loop::{ActiveEventLoop, ControlFlow, EventLoop}, keyboard::{KeyCode, PhysicalKey}, window::{Window, WindowId},
 };
 
 use crate::{
@@ -36,6 +32,7 @@ struct InputState {
     clicked_cursor_pos: Option<(f64, f64)>,
     is_playing: bool,
     is_minimised: bool,
+    is_debug: bool
 }
 
 struct AppState {
@@ -135,6 +132,7 @@ impl ApplicationHandler for App {
                 is_playing: true,
                 is_clicked: false,
                 is_minimised: false,
+                is_debug: false
             },
         });
     }
@@ -192,6 +190,7 @@ impl ApplicationHandler for App {
                 event:
                     KeyEvent {
                         physical_key: PhysicalKey::Code(key_code),
+                        state: ElementState::Pressed,
                         ..
                     },
                 ..
@@ -200,13 +199,19 @@ impl ApplicationHandler for App {
                 let s = self.state();
                 let before_ts = s.camera.get_onscreen_tile_size();
                 match key_code {
-                    KeyCode::KeyD => s.camera.pan((-10.0, 0.0)),
+                    KeyCode::KeyD => s.camera.pan((10.0, 0.0)),
                     KeyCode::KeyS => s.camera.pan((0.0, 10.0)),
-                    KeyCode::KeyA => s.camera.pan((10.0, 0.0)),
+                    KeyCode::KeyA => s.camera.pan((-10.0, 0.0)),
                     KeyCode::KeyW => s.camera.pan((0.0, -10.0)),
                     KeyCode::ArrowUp => s.camera.set_zoom(1),
                     KeyCode::ArrowDown => s.camera.set_zoom(-1),
-                    _ => is_dirty = false,
+                    something_else => {
+                        is_dirty = false;
+                        match something_else {
+                            KeyCode::KeyE => s.input.is_debug = !s.input.is_debug,
+                            _ => {}
+                        }
+                    }
                 }
                 if is_dirty {
                     if s.camera.get_onscreen_tile_size() != before_ts {
@@ -234,7 +239,7 @@ impl ApplicationHandler for App {
                     s.streamer.check_refresh(s.camera.get_onscreen_tile_size());
                     s.streamer
                         .write_atlas(&s.renderer.queue, s.camera.get_onscreen_tile_size(), 0);
-                    s.renderer.render();
+                    s.renderer.render(s.input.is_debug);
                     s.window.request_redraw();
                 }
             }
