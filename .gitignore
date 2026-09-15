@@ -5,5 +5,5 @@
 profile.json.gz
 profile.kernel.etl
 zinstall/
-cache/
+cache.bin
 config.json

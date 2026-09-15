@@ -7,6 +7,7 @@ use std::{
     },
 };
 
+use camino::Utf8Path;
 use parking_lot::RwLock;
 use rayon::prelude::*;
 use rustc_hash::{FxBuildHasher, FxHashSet};
@@ -214,14 +215,23 @@ pub(crate) fn streamer_thread(
                             return;
                         }
 
-                        //group videos
-                        let mut videos: HashMap<Arc<str>, Vec<_>> = HashMap::new();
-                        for (idx, v) in vid_tiles {
-                            videos
-                                .entry(v.source_path.clone())
-                                .or_default()
-                                .push((idx, v));
-                        }
+                        // //group videos
+                        // let mut videos: HashMap<Arc<Utf8Path>, Vec<_>> = HashMap::new();
+                        // for (idx, v) in vid_tiles {
+                        //     videos
+                        //         .entry(v.source_path.clone())
+                        //         .or_default()
+                        //         .push((idx, v));
+                        // }
+                        // videos
+                        //     .into_par_iter()
+                        //     .map(|(path, mut tiles)| {
+                        //         tiles.sort_unstable_by_key(|(_, t)| t.start_frame_index);
+                        //         (path, tiles)
+                        //     })
+                        //     .map(|(path, tiles)| {
+                        //         stream_tiles_from_video(&path, tiles.into_iter().map(|(_, v)| v))
+                        //     });
                     },
                 )
             },

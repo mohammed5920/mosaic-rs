@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use camino::Utf8PathBuf;
+use camino::Utf8Path;
 use ffmpeg_next as ffmpeg;
 
 use crate::util::vid_util::{extract_plane, frame_idx_from_pts};
@@ -30,7 +30,7 @@ pub(crate) struct VideoCapture {
     cropped_square_size: Option<u64>, //initialise the scaler to output small frames directly, faster than scaling after the fact
     is_eof_sent: bool,
 
-    path: Utf8PathBuf,
+    path: Arc<Utf8Path>,
     input: ffmpeg::format::context::Input,
     decoder: ffmpeg::decoder::Video,
     rgb_scaler: ffmpeg::software::scaling::Context,
@@ -39,10 +39,10 @@ pub(crate) struct VideoCapture {
 
 impl VideoCapture {
     pub(crate) fn new(
-        path: Utf8PathBuf,
+        path: Arc<Utf8Path>,
         cropped_square_size: Option<u64>,
     ) -> Result<Self, ffmpeg::Error> {
-        let input = ffmpeg::format::input(&path)?;
+        let input = ffmpeg::format::input(path.as_str())?;
 
         let stream = input
             .streams()

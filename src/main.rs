@@ -85,8 +85,7 @@ impl ApplicationHandler for App {
         let res_limit = 2u64.pow(
             (display_res.width.min(display_res.height) as f64)
                 .log2()
-                .floor()
-                .min(2048.0) as u32,
+                .floor() as u32,
         );
 
         let streamer = benchmark("initialising streamer", || {

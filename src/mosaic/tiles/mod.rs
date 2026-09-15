@@ -1,7 +1,8 @@
 pub(crate) mod pic_tiles;
+mod tile_cache;
 pub(crate) mod vid_tiles;
 
-use std::{cell::RefCell, collections::HashSet};
+use std::{cell::RefCell, collections::HashSet, sync::Arc};
 
 use camino::Utf8PathBuf;
 use fast_image_resize::Resizer;
@@ -9,10 +10,10 @@ use rayon::prelude::*;
 use rustc_hash::FxBuildHasher;
 
 use crate::{
-    config::CONFIG,
     mosaic::tiles::{
         pic_tiles::PicTile,
-        vid_tiles::{VidTile, vid_tiles_from_path},
+        tile_cache::{flush_cache, load_cache, load_pic_tile, load_vid_tiles},
+        vid_tiles::VidTile,
     },
     util::{
         colour_to_key,
@@ -58,27 +59,25 @@ impl Tile {
     }
 
     pub(crate) fn frame_count(&self) -> u64 {
-        if CONFIG.force_static_tiles {
-            1
-        } else {
-            match self {
-                Tile::Vid(vid_tile) => {
-                    debug_assert!(
-                        (vid_tile.end_frame_index as i64 - vid_tile.start_frame_index as i64) >= 0,
-                        "{} - starts at {} but ends at {}",
-                        vid_tile.source_path,
-                        vid_tile.start_frame_index,
-                        vid_tile.end_frame_index
-                    );
-                    (vid_tile.end_frame_index - vid_tile.start_frame_index) as u64
-                }
-                _ => 1,
+        match self {
+            Tile::Vid(vid_tile) => {
+                debug_assert!(
+                    (vid_tile.end_frame_index() as i64 - vid_tile.start_frame_index as i64) >= 0,
+                    "{} - starts at {} but ends at {}",
+                    vid_tile.source_path,
+                    vid_tile.start_frame_index,
+                    vid_tile.end_frame_index()
+                );
+                (vid_tile.end_frame_index() - vid_tile.start_frame_index) as u64
             }
+            _ => 1,
         }
     }
 }
 
 pub(crate) fn load_tiles(path: &Utf8PathBuf) -> anyhow::Result<Vec<Tile>> {
+    let cache = load_cache();
+
     let files = walk_dir(path)?;
     let (mut res, mut pics, mut vids) = (Vec::new(), Vec::new(), Vec::new());
     for file_path in files.into_iter() {
@@ -90,26 +89,21 @@ pub(crate) fn load_tiles(path: &Utf8PathBuf) -> anyhow::Result<Vec<Tile>> {
     }
 
     //process images first and then videos so that filtering for duplicates prioritises images first
-    res.par_extend(pics.into_par_iter().filter_map(|file_path| {
-        PicTile::new(file_path.clone())
-            .inspect_err(|e| eprintln!("{file_path} - {e:?}"))
-            .ok()
-            .map(Tile::Pic)
-    }));
+    res.par_extend(
+        pics.into_par_iter()
+            .filter_map(|file_path| load_pic_tile(&cache, file_path.into_string()))
+            .map(Tile::Pic),
+    );
+
     let mut vids: Vec<_> = vids
         .into_par_iter()
-        .filter_map(|file_path| {
-            vid_tiles_from_path(file_path.clone())
-                .inspect(|v| println!("{file_path} - {} tiles", v.len()))
-                .inspect_err(|e| eprintln!("{file_path} - {e:?}"))
-                .ok()
-        })
+        .filter_map(|file_path| load_vid_tiles(&cache, Arc::from(file_path)))
         .flatten()
         .map(Tile::Vid)
         .collect();
 
     //prioritising filtering videos that are longer
-    vids.par_sort_unstable_by_key(|t| t.frame_count());
+    vids.sort_unstable_by_key(|t| t.frame_count());
     res.append(&mut vids);
 
     let mut colour_key_set = HashSet::with_hasher(FxBuildHasher);
@@ -122,7 +116,7 @@ pub(crate) fn load_tiles(path: &Utf8PathBuf) -> anyhow::Result<Vec<Tile>> {
         })
         .collect();
     //cheap enough and makes the renderdoc capture look a lot more coherent
-    res.par_sort_unstable_by_key(|t| colour_to_key(t.average_colour()));
+    res.sort_unstable_by_key(|t| colour_to_key(t.average_colour()));
 
     println!(
         "filtered {}% of tiles ({}/{prev_len} tiles, {} tiles / {} frames left)",
@@ -132,5 +126,6 @@ pub(crate) fn load_tiles(path: &Utf8PathBuf) -> anyhow::Result<Vec<Tile>> {
         res.iter().map(|t| t.frame_count()).sum::<u64>()
     );
 
+    flush_cache(cache);
     Ok(res)
 }

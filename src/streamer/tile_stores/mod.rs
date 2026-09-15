@@ -50,7 +50,7 @@ impl TileStore {
         is_smart: bool,
     ) -> TileStore {
         assert!(
-            (2..=2048).contains(&tile_size) && is_power_of_two(tile_size),
+            tile_size >= 2 && is_power_of_two(tile_size),
             "tile size {tile_size} is invalid"
         );
         if !is_smart {

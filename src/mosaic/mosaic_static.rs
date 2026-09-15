@@ -3,7 +3,6 @@ use std::sync::Arc;
 use rustc_hash::FxHashMap;
 
 use crate::{
-    config::CONFIG,
     mosaic::{matchmaker::MatchMaker, media_source::pic_source::PicSource, tiles::Tile},
     types::DenseIndex,
     util::{benchmark, vec_unique},
@@ -53,10 +52,6 @@ impl StaticMosaic {
     }
 
     pub(crate) fn total_tile_frames(&self) -> u64 {
-        if CONFIG.force_static_tiles {
-            self.tiles.len() as u64
-        } else {
-            self.tiles.iter().map(|tile| tile.frame_count()).sum()
-        }
+        self.tiles.iter().map(|tile| tile.frame_count()).sum()
     }
 }
