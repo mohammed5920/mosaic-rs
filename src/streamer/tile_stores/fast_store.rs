@@ -1,22 +1,13 @@
 use std::{collections::HashSet, sync::Arc};
 
-use anyhow::Context;
-use fast_image_resize::{
-    FilterType, PixelType,
-    ResizeAlg::Convolution,
-    ResizeOptions,
-    images::{Image as FRImage, ImageRef as FRImageRef},
-};
+use fast_image_resize::ResizeOptions;
 use parking_lot::{RwLock, RwLockReadGuard};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rustc_hash::{FxBuildHasher, FxHashSet};
 
 use crate::{
-    mosaic::{
-        Mosaic,
-        tiles::{RESIZER, Tile},
-    },
-    streamer::tile_stores::{ReadTileResult, StoreFrame, TileStore},
+    mosaic::{Mosaic, tiles::Tile},
+    streamer::tile_stores::{ReadTileResult, StoreFrame, TileStore, scale_frame},
     types::{DenseIndex, StoreIndex},
 };
 
@@ -31,7 +22,7 @@ pub(crate) struct FastStore {
 }
 
 impl FastStore {
-    pub(crate) fn new(mosaic: &Mosaic, index_map: Arc<[StoreIndex]>, tile_size: u64) -> Self {
+    pub(crate) fn new(mosaic: &Mosaic, tile_size: u64, index_map: Arc<[StoreIndex]>) -> Self {
         let tile_pixels = tile_size.pow(2);
         let tiles = mosaic.tiles();
         let total_frames = mosaic.total_tile_frames();
@@ -49,7 +40,7 @@ impl FastStore {
         self.tracker.read()
     }
 
-    pub(crate) fn write_tiles(&self, tiles: &[(DenseIndex, &[StoreFrame])]) {
+    pub(crate) fn write_tiles(&self, tiles: Vec<(DenseIndex, Vec<StoreFrame>)>) {
         let frame_size = self.tile_size.pow(2) as usize;
         let mut y_guard = self.y_arena.write();
         let mut cbcr_guard = self.cbcr_arena.write();
@@ -63,7 +54,7 @@ impl FastStore {
                 y_guard[y_offset..y_offset + frame_size].copy_from_slice(&frame.y);
                 cbcr_guard[cbcr_offset..cbcr_offset + frame_size / 2].copy_from_slice(&frame.cb_cr);
             }
-            tracker_guard.insert(*tile_index);
+            tracker_guard.insert(tile_index);
         }
     }
 
@@ -71,60 +62,46 @@ impl FastStore {
         &self,
         tile_indices: &[DenseIndex],
         target_tile_store: &TileStore,
+        options: &ResizeOptions,
     ) {
         let frame_size = self.tile_size.pow(2) as usize;
         let y_guard = self.y_arena.read();
         let cbcr_guard = self.cbcr_arena.read();
-        let mut options = ResizeOptions::new();
-        options.algorithm = Convolution(FilterType::Bilinear);
-        let source_size = self.tile_size as u32;
-        let target_size = target_tile_store.tile_size() as u32;
 
-        let all_tiles_res = tile_indices.par_iter().map(|tile_index| {
-            {
-                let mut y_dest = FRImage::new(target_size, target_size, PixelType::U8);
-                let mut cbcr_dest = FRImage::new(target_size/2, target_size/2, PixelType::U8x2);
-
+        let all_tiles_res = tile_indices
+            .par_iter()
+            .copied()
+            .map(|tile_index| {
                 let store_index = self.index_map[tile_index.0 as usize].0 as usize;
                 let frame_count = self.tiles[tile_index.0 as usize].frame_count() as usize;
-
                 let mut per_tile_res = Vec::new();
-                for i in store_index..store_index+frame_count {
+                for i in store_index..store_index + frame_count {
                     let y_offset = i * frame_size;
                     let y_slice = &y_guard[y_offset..y_offset + frame_size];
-                    let y_view = FRImageRef::new(source_size, source_size, y_slice, PixelType::U8).with_context(|| format!("could not wrap y plane of tile {tile_index:?} offset {} from size {}", i-store_index, self.tile_size)).unwrap();
-
                     let cbcr_offset = y_offset / 2;
                     let cbcr_slice = &cbcr_guard[cbcr_offset..cbcr_offset + frame_size / 2];
-                    let cb_cr_view = FRImageRef::new(source_size/2, source_size/2, cbcr_slice, PixelType::U8x2).with_context(|| format!("could not wrap uv plane of tile {tile_index:?} offset {} from size {}", i-store_index, self.tile_size)).unwrap();
-
-                    RESIZER.with_borrow_mut(|r| {
-                        r.resize(&y_view, &mut y_dest, &options).with_context(|| format!("could not downscale y plane of tile {tile_index:?} offset {} from size {}", i-store_index, self.tile_size)).unwrap();
-                        r.resize(&cb_cr_view, &mut cbcr_dest, &options).with_context(|| format!("could not downscale y plane of tile {tile_index:?} offset {} from size {}", i-store_index, self.tile_size)).unwrap();
-                    });
-
-                    per_tile_res.push(StoreFrame::new(y_dest.buffer().into(), cbcr_dest.buffer().into(), target_size as u64));
+                    per_tile_res.push(scale_frame(
+                        options,
+                        y_slice,
+                        cbcr_slice,
+                        self.tile_size as u32,
+                        target_tile_store.tile_size() as u32,
+                    ));
                 }
-
                 (tile_index, per_tile_res)
-            }
-        }).collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>();
 
-        let converted: Vec<(DenseIndex, &[StoreFrame])> = all_tiles_res
-            .iter()
-            .map(|(idx, frames)| (**idx, frames.as_slice()))
-            .collect();
-
-        target_tile_store.write_tiles(&converted);
+        target_tile_store.write_tiles(all_tiles_res);
     }
 
     pub(crate) fn with_tiles(
         &self,
-        indices: impl Iterator<Item = DenseIndex>,
+        indices: impl ExactSizeIterator<Item = DenseIndex>,
         frame_offset: u64,
         closure: impl FnOnce(Vec<(DenseIndex, ReadTileResult)>),
     ) {
-        let mut result = Vec::new();
+        let mut result = Vec::with_capacity(indices.len());
         let tracker_guard = self.read_tracker();
         let frame_size = self.tile_size.pow(2) as usize;
         let y_guard = self.y_arena.read();

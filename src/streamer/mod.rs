@@ -342,7 +342,7 @@ impl Streamer {
         let cbcr_tiles_per_row = self.atlas_cbcr_texture.width() as usize / cbcr_tile_size_px;
 
         self.stores[tile_size_to_store_index(tile_size as u64)].with_tiles(
-            &mut visible_guard.iter().copied(),
+            visible_guard.iter().copied(),
             frame_offset,
             |results| {
                 for (tile_index, result) in results {

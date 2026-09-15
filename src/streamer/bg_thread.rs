@@ -109,8 +109,8 @@ pub(crate) fn streamer_thread(
         let (mut cached_tiles, mut pic_tiles, mut vid_tiles) = (Vec::new(), Vec::new(), Vec::new());
 
         let super_res = (tile_size * CONFIG.prefetch_multiplier.get())
-            .min(fast_limit)
-            .max(res_limit);
+            .max(fast_limit)
+            .min(res_limit);
 
         for idx in difference {
             if let Some(supertile) = probe_supertile(idx, tile_size) {
@@ -166,33 +166,31 @@ pub(crate) fn streamer_thread(
                             return;
                         }
 
-                        let pics = pic_tiles
+                        let (idxs, pics) = pic_tiles
                             .into_par_iter()
                             .filter_map(|(idx, p)| {
                                 //skip decoding the image if asked to stop early
                                 if kill_flag_ref.load(Ordering::Relaxed) {
                                     return None;
                                 }
-                                let res = (
-                                    idx,
+                                let res = vec![
                                     p.stream_in(super_res)
                                         //maybe we could skip this tile, but if it was loaded in and processed before,
                                         //that means the image is fine and it's the streaming that's wonky...
                                         .unwrap_or_else(|_| {
                                             panic!("could not stream in pic tile {idx:?}")
                                         }),
-                                );
-                                Some(res)
+                                ];
+                                Some((idx, res))
                             })
-                            .collect::<Vec<_>>();
+                            .collect::<(Vec<_>, Vec<_>)>();
 
-                        let converted = pics
-                            .iter()
-                            .map(|(i, f)| (*i, std::slice::from_ref(f)))
-                            .collect::<Vec<_>>();
-
-                        tile_stores_ref[tile_size_to_store_index(super_res)]
-                            .write_tiles(&converted);
+                        tile_stores_ref[tile_size_to_store_index(super_res)].write_tiles(
+                            pics.into_iter()
+                                .enumerate()
+                                .map(|(i, p)| (idxs[i], p))
+                                .collect(),
+                        );
 
                         //skip downscaling if asked to stop early
                         if kill_flag_ref.load(Ordering::Relaxed) || super_res == tile_size {
@@ -200,7 +198,7 @@ pub(crate) fn streamer_thread(
                         }
 
                         tile_stores_ref[tile_size_to_store_index(super_res)].downscale_tiles(
-                            &converted.iter().map(|(i, _)| *i).collect::<Vec<_>>(),
+                            &idxs,
                             &tile_stores_ref[tile_size_to_store_index(tile_size)],
                         );
                     },

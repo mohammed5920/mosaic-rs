@@ -76,25 +76,23 @@ impl Renderer {
         surface.configure(&device, &config);
         let surface_format = config.format;
 
-        let mosaic_shader_module =
-            device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("saic_Mosaic Shader"),
-                source: wgpu::ShaderSource::Wgsl(
-                    fs::read_to_string("src/renderer/_mosaic.wgsl")
-                        .expect("cannot read fragment shader")
-                        .into(),
-                ),
-            });
+        let mosaic_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("saic_Mosaic Shader"),
+            source: wgpu::ShaderSource::Wgsl(
+                fs::read_to_string("src/renderer/_mosaic.wgsl")
+                    .expect("cannot read fragment shader")
+                    .into(),
+            ),
+        });
 
-        let debug_shader_module =
-            device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("saic_Debug Shader"),
-                source: wgpu::ShaderSource::Wgsl(
-                    fs::read_to_string("src/renderer/_debug.wgsl")
-                        .expect("cannot read fragment shader")
-                        .into(),
-                ),
-            });
+        let debug_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("saic_Debug Shader"),
+            source: wgpu::ShaderSource::Wgsl(
+                fs::read_to_string("src/renderer/_debug.wgsl")
+                    .expect("cannot read fragment shader")
+                    .into(),
+            ),
+        });
 
         let mosaic_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("saic_Mosaic Pipeline"),
@@ -253,14 +251,16 @@ impl Renderer {
         self.debug_bind_group = Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("saic_Debug Bind Group"),
             layout: &self.debug_pipeline.get_bind_group_layout(0),
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera_buffer.as_entire_binding()
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::TextureView(atlas_y_view)
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: camera_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(atlas_y_view),
+                },
+            ],
         }))
     }
 

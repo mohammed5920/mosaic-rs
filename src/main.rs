@@ -5,7 +5,11 @@ use ffmpeg_next as ffmpeg;
 use std::{process::exit, sync::Arc, thread};
 
 use winit::{
-    application::ApplicationHandler, event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta::LineDelta, WindowEvent}, event_loop::{ActiveEventLoop, ControlFlow, EventLoop}, keyboard::{KeyCode, PhysicalKey}, window::{Window, WindowId},
+    application::ApplicationHandler,
+    event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta::LineDelta, WindowEvent},
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
+    keyboard::{KeyCode, PhysicalKey},
+    window::{Window, WindowId},
 };
 
 use crate::{
@@ -32,7 +36,7 @@ struct InputState {
     clicked_cursor_pos: Option<(f64, f64)>,
     is_playing: bool,
     is_minimised: bool,
-    is_debug: bool
+    is_debug: bool,
 }
 
 struct AppState {
@@ -132,7 +136,7 @@ impl ApplicationHandler for App {
                 is_playing: true,
                 is_clicked: false,
                 is_minimised: false,
-                is_debug: false
+                is_debug: false,
             },
         });
     }

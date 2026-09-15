@@ -8,8 +8,8 @@ use fast_image_resize::{
 use image::{DynamicImage, ImageReader, RgbImage};
 use imohash::Hasher as ImoHasher;
 use yuv::{
-    YuvBiPlanarImageMut, YuvChromaSubsampling, YuvConversionMode, YuvRange, YuvStandardMatrix,
-    rgb_to_yuv_nv12,
+    BufferStoreMut, YuvBiPlanarImageMut, YuvChromaSubsampling, YuvConversionMode, YuvRange,
+    YuvStandardMatrix, rgb_to_yuv_nv12,
 };
 
 use crate::{
@@ -127,10 +127,12 @@ impl PicTile {
             YuvConversionMode::Fast,
         )?;
 
-        Ok(StoreFrame::new(
-            planar_image.y_plane.borrow().into(),
-            planar_image.uv_plane.borrow().into(),
-            tile_size,
-        ))
+        let (BufferStoreMut::Owned(y_plane), BufferStoreMut::Owned(cbcr_plane)) =
+            (planar_image.y_plane, planar_image.uv_plane)
+        else {
+            unreachable!("buffers allocated by YuvBiPlanarImageMut are always owned")
+        };
+
+        Ok(StoreFrame::new(y_plane, cbcr_plane, tile_size))
     }
 }
