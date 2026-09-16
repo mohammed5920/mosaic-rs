@@ -212,6 +212,14 @@ impl ApplicationHandler for App {
                         match something_else {
                             KeyCode::KeyE => s.input.is_debug = !s.input.is_debug,
                             KeyCode::Space => s.input.is_playing = !s.input.is_playing,
+                            KeyCode::KeyQ => {
+                                s.input.timestamp += 60.0;
+                                if let Mosaic::Dynamic(ref mut d) = s.mosaic {
+                                    d.seek_to_frame(
+                                        s.input.last_frame_index + (60.0 * CONFIG.video_fps) as u64,
+                                    );
+                                }
+                            }
                             _ => {}
                         }
                     }
@@ -244,7 +252,7 @@ impl ApplicationHandler for App {
                     s.input.last_frame_instant = now;
                     if s.input.is_playing {
                         s.input.timestamp += dt;
-                        let curr_frame = (s.input.timestamp * 24.0) as u64;
+                        let curr_frame = (s.input.timestamp * CONFIG.video_fps) as u64;
                         if curr_frame != s.input.last_frame_index {
                             if !CONFIG.force_static_tiles {
                                 s.streamer.on_tile_offset_change();
@@ -257,7 +265,7 @@ impl ApplicationHandler for App {
                             s.input.last_frame_index = curr_frame
                         }
                     }
-                    
+
                     s.streamer.check_refresh(s.camera.get_onscreen_tile_size());
                     s.streamer.write_atlas(
                         &s.renderer.queue,
@@ -270,7 +278,9 @@ impl ApplicationHandler for App {
             }
 
             WindowEvent::CloseRequested => {
-                self.state().streamer.shutdown();
+                let s = self.state();
+                s.streamer.shutdown();
+                s.mosaic.shutdown();
                 event_loop.exit();
             }
 

@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicI32, Ordering};
 
 use kiddo::{ImmutableKdTree, dist::SquaredEuclidean};
+use rayon::prelude::*;
 
 use crate::{mosaic::tiles::Tile, types::SparseIndex, util::colour_to_key};
 
@@ -35,7 +36,7 @@ impl MatchMaker {
         query
             .as_chunks::<3>()
             .0
-            .iter()
+            .par_iter()
             .map(|pixel| {
                 let key = colour_to_key(*pixel);
                 let mut res = self.colour_map[key].load(Ordering::Relaxed);

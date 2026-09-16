@@ -28,6 +28,8 @@ serde = { version = "1.0.229", default-features = false, features = ["derive", "
 serde_json = { version = "1.0.151", default-features = false, features = ["std"] }
 #querying ram usage 
 sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+#better channel semantics
+crossbeam = { version = "0.8.5", default-features = false, features = ["std", "crossbeam-channel"] }
 
 ##media stuff
 #serialising video cache files

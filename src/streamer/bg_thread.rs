@@ -227,7 +227,7 @@ pub(crate) fn streamer_thread(
                             .into_par_iter()
                             .map(|(path, mut tiles)| {
                                 if kill_flag_ref.load(Ordering::Relaxed) {
-                                    return Vec::new()
+                                    return Vec::new();
                                 }
 
                                 tiles.sort_unstable_by_key(|(_, t)| t.start_frame_index);
@@ -236,9 +236,9 @@ pub(crate) fn streamer_thread(
                                     tiles.iter().map(|(_, v)| *v),
                                     super_res,
                                     is_multithreaded,
-                                    kill_flag_ref.clone()
+                                    kill_flag_ref.clone(),
                                 );
-                                
+
                                 frames
                                     .into_iter()
                                     .enumerate()

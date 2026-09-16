@@ -36,6 +36,7 @@ pub(crate) struct AppConfig {
     pub(crate) zoom_steps_per_octave: NonZero<u64>,
     pub(crate) tile_base_res: NonZero<u64>,
     pub(crate) prefetch_multiplier: NonZero<u64>,
+    pub(crate) video_fps: f64,
     pub(crate) ram_percent: u64,
     ///can be zero to load every single video frame as a tile
     pub(crate) difference_threshold: u64,
@@ -68,6 +69,7 @@ pub(crate) fn load_config() -> AppConfig {
                 hard_seek_threshold: NonZero::new(4).unwrap(),
                 zoom_steps_per_octave: NonZero::new(30).unwrap(),
                 tile_base_res: NonZero::new(64).unwrap(),
+                video_fps: 24.0,
             };
             let writer = File::create(CONFIG_PATH).expect("could not create config writer");
             let writer = BufWriter::new(writer);

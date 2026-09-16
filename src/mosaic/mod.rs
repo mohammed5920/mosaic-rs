@@ -56,14 +56,11 @@ impl Mosaic {
         if let Mosaic::Dynamic(d) = self {
             d.advance_frame();
         };
-    }
+    } 
 
-    ///seek to a given frame of a dynamic mosaic
-    ///
-    ///(not guaranteed to be frame accurate, no-op for static ones)
-    pub(crate) fn seek_to_frame(&mut self, frame_idx: u64) {
+    pub(crate) fn shutdown(&self) {
         if let Mosaic::Dynamic(d) = self {
-            d.seek_to_frame(frame_idx);
+            d.shutdown();
         };
     }
 
