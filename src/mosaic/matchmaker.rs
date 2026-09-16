@@ -49,9 +49,8 @@ impl MatchMaker {
                         .item as i32;
                     self.colour_map[key].store(res, Ordering::Relaxed);
                 }
-                res
+                SparseIndex(res)
             })
-            .map(SparseIndex)
             .collect()
     }
 }

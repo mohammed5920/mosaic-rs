@@ -58,13 +58,14 @@ impl VideoCapture {
         let stream_time_base = stream.time_base();
 
         let context = ffmpeg::codec::context::Context::from_parameters(stream.parameters())?;
-        let mut decoder = context.decoder().video()?;
+        let mut decoder = context.decoder(); 
         if is_multithreaded {
             decoder.set_threading(ffmpeg::threading::Config {
                 kind: ffmpeg::threading::Type::Frame,
                 count: 0,
             });
         }
+        let decoder = decoder.video()?;
 
         let in_format = decoder.format();
         let in_width = decoder.width();

@@ -65,6 +65,12 @@ pub(crate) fn extract_plane(
     bpp: u64,
 ) -> Vec<u8> {
     let mut out = vec![0u8; (out_w * out_h * bpp) as usize];
+    //special case - no horizontal cropping & stride is equal to output width
+    if stride == out_w * bpp && x_start == 0 {
+        let total_len = (out_w * out_h * bpp) as usize;
+        let start = (y_start * stride) as usize;
+        return data[start..start + total_len].to_vec();
+    }
     for row in 0..out_h {
         let src_row = y_start + row;
         let row_byte_start = (src_row * stride + x_start * bpp) as usize;
