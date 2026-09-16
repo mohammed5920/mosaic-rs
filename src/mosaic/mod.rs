@@ -56,7 +56,7 @@ impl Mosaic {
         if let Mosaic::Dynamic(d) = self {
             d.advance_frame();
         };
-    } 
+    }
 
     pub(crate) fn shutdown(&self) {
         if let Mosaic::Dynamic(d) = self {

@@ -37,7 +37,7 @@ pub(crate) struct AppConfig {
     pub(crate) tile_base_res: NonZero<u64>,
     pub(crate) prefetch_multiplier: NonZero<u64>,
     pub(crate) video_fps: f64,
-    pub(crate) ram_percent: u64,
+    pub(crate) ram_percent: f64,
     ///can be zero to load every single video frame as a tile
     pub(crate) difference_threshold: u64,
 }
@@ -64,8 +64,8 @@ pub(crate) fn load_config() -> AppConfig {
                 backend: wgpu::Backend::Gl,
 
                 difference_threshold: 300,
-                ram_percent: 75,
-                prefetch_multiplier: NonZero::new(4).unwrap(),
+                ram_percent: 75.0,
+                prefetch_multiplier: NonZero::new(2).unwrap(),
                 hard_seek_threshold: NonZero::new(4).unwrap(),
                 zoom_steps_per_octave: NonZero::new(30).unwrap(),
                 tile_base_res: NonZero::new(64).unwrap(),
@@ -83,7 +83,7 @@ pub(crate) fn load_config() -> AppConfig {
         "prefetch_multiplier must be a power of 2"
     );
     assert!(
-        config.ram_percent <= 100,
+        config.ram_percent <= 100.0,
         "cannot use more than 100% of free RAM (sadly)"
     );
     config

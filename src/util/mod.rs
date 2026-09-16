@@ -3,8 +3,12 @@ pub(crate) mod file_util;
 pub(crate) mod gpu_util;
 pub(crate) mod vid_util;
 
-use std::time::Instant;
+use std::{
+    thread,
+    time::{Duration, Instant},
+};
 
+use parking_lot::deadlock;
 use rayon::prelude::*;
 
 pub(crate) fn benchmark<T>(label: &str, function: impl FnOnce() -> T) -> T {
@@ -59,4 +63,25 @@ pub(crate) fn set_panic_hook() {
             .set_buttons(rfd::MessageButtons::Ok)
             .show();
     }));
+}
+
+pub(crate) fn detect_deadlocks() {
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_secs(10));
+            let deadlocks = deadlock::check_deadlock();
+            if deadlocks.is_empty() {
+                continue;
+            }
+
+            println!("{} deadlocks detected", deadlocks.len());
+            for (i, threads) in deadlocks.iter().enumerate() {
+                println!("deadlock #{}", i);
+                for t in threads {
+                    println!("thread Id {:#?}", t.thread_id());
+                    println!("{:#?}", t.backtrace());
+                }
+            }
+        }
+    });
 }

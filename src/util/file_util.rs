@@ -22,7 +22,6 @@ pub(crate) enum MediaType {
     Etc,
 }
 
-//NOTE: all the supported extensions live here
 pub(crate) fn check_supported_extension(path: &Utf8PathBuf) -> MediaType {
     match path.extension().map(|e| e.to_lowercase()) {
         Some(pic) if PIC_EXTENSIONS.contains(&pic) => MediaType::Pic,

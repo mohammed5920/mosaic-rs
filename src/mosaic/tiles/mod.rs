@@ -61,7 +61,7 @@ impl Tile {
     pub(crate) fn frame_count(&self) -> u64 {
         match self {
             Tile::Vid(v) => v.frame_count(),
-            Tile::Pic(p) => p.frame_count(),
+            Tile::Pic(_) => 1,
         }
     }
 }

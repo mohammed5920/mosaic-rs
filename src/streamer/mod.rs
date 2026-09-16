@@ -35,11 +35,13 @@ pub(crate) struct Streamer {
     pager_buff: Vec<u32>,
     atlas_y_buff: Vec<u8>,
     atlas_cbcr_buff: Vec<u8>,
+    debug_texture: wgpu::Texture,
     pager_texture: wgpu::Texture,
     atlas_y_texture: wgpu::Texture,
     atlas_cbcr_texture: wgpu::Texture,
     pub(crate) pager_view: wgpu::TextureView,
     pub(crate) atlas_y_view: wgpu::TextureView,
+    pub(crate) debug_tex_view: wgpu::TextureView,
     pub(crate) atlas_cbcr_view: wgpu::TextureView,
 
     ///where index is a DenseIndex, value is refcount visible on screen
@@ -51,8 +53,6 @@ pub(crate) struct Streamer {
     is_streaming_busy: bool,
 
     stores: Arc<[TileStore]>,
-    ram_usage_bytes: u64,
-    ram_limit_bytes: u64,
     stream_thread_sender: Sender<StreamingMessage>,
     stream_thread_receiver: Receiver<StreamingMessage>,
     stream_kill_flag: Arc<AtomicBool>,
@@ -79,6 +79,15 @@ impl Streamer {
             pager_dim,
             pager_dim,
             wgpu::TextureFormat::R32Uint,
+            None,
+        );
+        let (debug_tex_view, debug_texture) = create_texture(
+            device,
+            queue,
+            "saic_Debug Streaming Texture",
+            pager_dim,
+            pager_dim,
+            wgpu::TextureFormat::R8Unorm,
             None,
         );
 
@@ -117,7 +126,7 @@ impl Streamer {
             vec![0u8; (atlas_cbcr_texture.width() * atlas_cbcr_texture.height()) as usize * 2];
 
         //initialise stores
-        //size of 2 arrays at current size + tile dictionary at 4x(default) the screen resolution * avg no. of frames per tile
+        //size of 2 arrays at current size + tile dictionary at 2x(default) the screen resolution * avg no. of frames per tile
         //adjust monitor res for tile supersampling
         let guess_ram_usage = |dim: f64| {
             (2.0 * dim * dim * total_frames as f64 * 1.5
@@ -133,8 +142,7 @@ impl Streamer {
             RefreshKind::nothing().with_memory(MemoryRefreshKind::nothing().with_ram()),
         )
         .free_memory() as f64
-            * (CONFIG.ram_percent as f64 / 100.0)) as i64;
-        let ram_limit_bytes = available_bytes as u64;
+            * (CONFIG.ram_percent / 100.0)) as i64;
 
         let mut tile_stores = Vec::new();
         let mut fast_limit = 1u64;
@@ -182,6 +190,7 @@ impl Streamer {
                 tiles_clone,
                 fast_limit,
                 res_limit,
+                available_bytes,
             )
         });
 
@@ -190,9 +199,10 @@ impl Streamer {
             pager_buff,
             atlas_y_view,
             atlas_y_buff,
+            debug_texture,
             pager_texture,
+            debug_tex_view,
             atlas_y_texture,
-            ram_limit_bytes,
             atlas_cbcr_view,
             atlas_cbcr_buff,
             atlas_cbcr_texture,
@@ -205,7 +215,6 @@ impl Streamer {
             stream_kill_flag: kill_flag,
             stream_thread_sender: to_tx,
             stream_thread_receiver: from_rx,
-            ram_usage_bytes: ram_limit_bytes - available_bytes as u64,
             visibility_map: mosaic.tiles().iter().map(|_| 0).collect(),
         }
     }
@@ -303,13 +312,9 @@ impl Streamer {
                 //thread is busy
                 Err(TryRecvError::Empty) => return,
                 //thread finished
-                Ok(StreamingMessage::CycleEnd {
-                    after_ram_bytes,
-                    did_onscreen_tiles_change,
-                }) => {
+                Ok(StreamingMessage::CycleEnd { mark_atlas_dirty }) => {
                     self.is_streaming_busy = false;
-                    self.ram_usage_bytes = after_ram_bytes;
-                    self.is_atlas_dirty = self.is_atlas_dirty || did_onscreen_tiles_change;
+                    self.is_atlas_dirty = self.is_atlas_dirty || mark_atlas_dirty;
                 }
                 Ok(invalid_message) => {
                     panic!("streamer recieved {invalid_message:?} from bg thread")
@@ -325,11 +330,7 @@ impl Streamer {
             self.is_streaming_busy = true;
             self.stream_kill_flag.store(false, Ordering::Relaxed);
             self.stream_thread_sender
-                .send(StreamingMessage::CycleStart {
-                    tile_size,
-                    before_ram_bytes: self.ram_usage_bytes,
-                    ram_limit_bytes: self.ram_limit_bytes,
-                })
+                .send(StreamingMessage::CycleStart { tile_size })
                 .expect("streamer thread should keep bg channel open");
         }
     }
@@ -414,5 +415,35 @@ impl Streamer {
                 Some(height_limit / 2),
             );
         }
+    }
+
+    pub(crate) fn write_debug_texture(
+        &self,
+        queue: &wgpu::Queue,
+        mosaic: &Mosaic,
+        camera: &AppCameraWrapper,
+    ) {
+        if !camera.is_zoomed_in() {
+            return;
+        }
+
+        let mut buff =
+            vec![0u8; (self.debug_texture.width() * self.debug_texture.height()) as usize];
+        let multiplier = 255.0 / self.stores.len() as f64;
+
+        for idx in 0..mosaic.tiles().len() {
+            let Some((store_idx, _)) = self
+                .stores
+                .iter()
+                .enumerate()
+                .rev()
+                .find(|(_, s)| s.contains_tile(DenseIndex(idx as i32)))
+            else {
+                continue;
+            };
+            buff[idx] = ((store_idx + 1) as f64 * multiplier) as u8
+        }
+
+        write_texture(queue, &self.debug_texture, &buff, 1, None);
     }
 }

@@ -1,7 +1,7 @@
 use std::{collections::HashSet, sync::Arc};
 
 use fast_image_resize::ResizeOptions;
-use parking_lot::{RwLock, RwLockReadGuard};
+use parking_lot::RwLock;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rustc_hash::{FxBuildHasher, FxHashSet};
 
@@ -36,18 +36,23 @@ impl FastStore {
         }
     }
 
-    pub(crate) fn read_tracker(&self) -> RwLockReadGuard<'_, HashSet<DenseIndex, FxBuildHasher>> {
-        self.tracker.read()
+    pub(crate) fn contains_tile(&self, index: DenseIndex) -> bool {
+        self.tracker.read().contains(&index)
+    }
+
+    ///tiles that are in the passed indices, but not in the store
+    pub(crate) fn difference(&self, indices: impl Iterator<Item = DenseIndex>) -> Vec<DenseIndex> {
+        let guard = self.tracker.read();
+        indices.filter(|i| !guard.contains(i)).collect()
     }
 
     pub(crate) fn write_tiles(&self, tiles: Vec<(DenseIndex, Vec<StoreFrame>)>) {
         let frame_size = self.tile_size.pow(2) as usize;
-        let mut y_guard = self.y_arena.write();
-        let mut cbcr_guard = self.cbcr_arena.write();
-        let mut tracker_guard = self.tracker.write();
-
         for (tile_index, frames) in tiles {
             let store_index = self.index_map[tile_index.0 as usize].0 as usize;
+            let mut tracker_guard = self.tracker.write();
+            let mut y_guard = self.y_arena.write();
+            let mut cbcr_guard = self.cbcr_arena.write();
             for (i, frame) in frames.iter().enumerate() {
                 let y_offset = (store_index + i) * frame_size;
                 let cbcr_offset = y_offset / 2;
@@ -102,8 +107,8 @@ impl FastStore {
         closure: impl FnOnce(Vec<(DenseIndex, ReadTileResult)>),
     ) {
         let mut result = Vec::with_capacity(indices.len());
-        let tracker_guard = self.read_tracker();
         let frame_size = self.tile_size.pow(2) as usize;
+        let tracker_guard = self.tracker.read();
         let y_guard = self.y_arena.read();
         let cbcr_guard = self.cbcr_arena.read();
 

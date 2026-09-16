@@ -18,7 +18,7 @@ use crate::{
     mosaic::Mosaic,
     renderer::Renderer,
     streamer::Streamer,
-    util::{benchmark, set_panic_hook},
+    util::{benchmark, detect_deadlocks, set_panic_hook},
 };
 
 mod camera;
@@ -60,7 +60,6 @@ impl App {
 }
 
 impl ApplicationHandler for App {
-    //NOTE: Initialiser
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let mosaic = Mosaic::create(CONFIG.source_path.clone(), CONFIG.tile_path.clone())
             .expect("could not create mosaic");
@@ -112,6 +111,7 @@ impl ApplicationHandler for App {
             &streamer.pager_view,
             &streamer.atlas_y_view,
             &streamer.atlas_cbcr_view,
+            &streamer.debug_tex_view,
         );
         renderer.update_mosaic_texture(mosaic.dense_matches());
 
@@ -177,7 +177,6 @@ impl ApplicationHandler for App {
                 let s = self.state();
                 let before_ts = s.camera.get_onscreen_tile_size();
                 if y > 0.0 {
-                    //NOTE: mouse wheel delta (4 matching python)
                     s.camera.set_zoom(4);
                 } else if y < 0.0 {
                     s.camera.set_zoom(-4);
@@ -265,13 +264,16 @@ impl ApplicationHandler for App {
                             s.input.last_frame_index = curr_frame
                         }
                     }
-
                     s.streamer.check_refresh(s.camera.get_onscreen_tile_size());
                     s.streamer.write_atlas(
                         &s.renderer.queue,
                         s.camera.get_onscreen_tile_size(),
                         s.input.last_frame_index,
                     );
+                    if s.input.is_debug {
+                        s.streamer
+                            .write_debug_texture(&s.renderer.queue, &s.mosaic, &s.camera);
+                    }
                     s.renderer.render(s.input.is_debug);
                     s.window.request_redraw();
                 }
@@ -291,6 +293,7 @@ impl ApplicationHandler for App {
 
 pub(crate) fn main() {
     set_panic_hook();
+    detect_deadlocks();
     ffmpeg::init().expect("could not initialise FFMPEG");
     let event_loop: EventLoop<()> = EventLoop::new().expect("could not initialise winit");
     event_loop.set_control_flow(ControlFlow::Wait);

@@ -1,12 +1,10 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 
 use fast_image_resize::ResizeOptions;
-use parking_lot::{RwLock, RwLockReadGuard};
+use lru::LruCache;
+use parking_lot::RwLock;
 use rayon::prelude::*;
-use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
+use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use crate::{
     mosaic::{Mosaic, tiles::Tile},
@@ -18,8 +16,8 @@ use crate::{
 pub(crate) struct SmartStore {
     pub(crate) tile_size: u64,
     tiles: Arc<[Tile]>,
-    //keep a separate set so differences can be made quickly and locking is more fine-grained
-    tracker: RwLock<FxHashSet<DenseIndex>>,
+    //keep a separate tracker so differences can be made quickly and locking is more fine-grained
+    tracker: RwLock<LruCache<DenseIndex, (), FxBuildHasher>>,
     inner: RwLock<FxHashMap<DenseIndex, Vec<StoreFrame>>>,
 }
 
@@ -28,22 +26,27 @@ impl SmartStore {
         let tiles = mosaic.tiles();
         Self {
             inner: HashMap::<_, _, _>::with_hasher(FxBuildHasher).into(),
-            tracker: HashSet::with_hasher(FxBuildHasher).into(),
+            tracker: LruCache::unbounded_with_hasher(FxBuildHasher).into(),
             tile_size,
             tiles,
         }
     }
 
-    pub(crate) fn read_tracker(&self) -> RwLockReadGuard<'_, HashSet<DenseIndex, FxBuildHasher>> {
-        self.tracker.read()
+    pub(crate) fn contains_tile(&self, index: DenseIndex) -> bool {
+        self.inner.read().contains_key(&index)
+    }
+
+    pub(crate) fn difference(&self, indices: impl Iterator<Item = DenseIndex>) -> Vec<DenseIndex> {
+        let guard = self.inner.read();
+        indices.filter(|i| !guard.contains_key(i)).collect()
     }
 
     pub(crate) fn write_tiles(&self, tiles: Vec<(DenseIndex, Vec<StoreFrame>)>) {
-        let mut inner_guard = self.inner.write();
-        let mut tracker_guard = self.tracker.write();
         for (tile_index, frames) in tiles {
+            let mut inner_guard = self.inner.write();
+            let mut tracker_guard = self.tracker.write();
             inner_guard.insert(tile_index, frames);
-            tracker_guard.insert(tile_index);
+            tracker_guard.push(tile_index, ());
         }
     }
 
@@ -75,6 +78,13 @@ impl SmartStore {
             })
             .collect::<Vec<_>>();
 
+        {
+            let mut tracker_guard = self.tracker.write();
+            all_tiles_res.iter().for_each(|(i, _)| {
+                tracker_guard.get(i);
+            });
+        }
+
         target_tile_store.write_tiles(all_tiles_res);
     }
 
@@ -91,6 +101,7 @@ impl SmartStore {
             match inner_guard.get(&tile_index) {
                 None => result.push((tile_index, ReadTileResult::Vacant)),
                 Some(frames) => {
+                    self.tracker.write().get(&tile_index);
                     let mod_frame =
                         (frame_offset % self.tiles[tile_index.0 as usize].frame_count()) as usize;
                     let store_frame = &frames[mod_frame];
@@ -106,5 +117,29 @@ impl SmartStore {
         }
 
         closure(result)
+    }
+
+    pub(crate) fn ram_usage_bytes(&self) -> u64 {
+        let guard = self.inner.read();
+        guard
+            .values()
+            .map(|f| (f.len() as u64 * self.tile_size * self.tile_size) as f64 * 1.5)
+            .sum::<f64>() as u64
+    }
+
+    pub(crate) fn get_least_used(&self) -> Vec<DenseIndex> {
+        let guard = self.tracker.read();
+        guard.iter().rev().map(|(k, _)| *k).collect()
+    }
+
+    pub(crate) fn free_tile(&self, idx: DenseIndex) -> u64 {
+        self.tracker.write().pop(&idx);
+        let res = self.inner.write().remove(&idx).unwrap_or_else(|| {
+            panic!(
+                "tried to free a tile that doesn't exist in store {}",
+                self.tile_size
+            )
+        });
+        ((res.len() as u64 * self.tile_size * self.tile_size) as f64 * 1.5) as u64
     }
 }

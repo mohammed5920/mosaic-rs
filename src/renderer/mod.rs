@@ -1,8 +1,13 @@
-use std::{fs, sync::Arc};
+use std::sync::Arc;
 
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::{config::CONFIG, mosaic::Mosaic, types::DenseIndex, util::gpu_util::create_texture};
+use crate::{
+    config::CONFIG,
+    mosaic::Mosaic,
+    types::DenseIndex,
+    util::gpu_util::{create_pipeline, create_texture},
+};
 
 pub(crate) struct Renderer {
     ///the gpu
@@ -21,13 +26,14 @@ pub(crate) struct Renderer {
     mosaic_view: Option<wgpu::TextureView>,
     mosaic_bind_group: Option<wgpu::BindGroup>,
 
-    ///pipeline for the debug shader
-    debug_pipeline: wgpu::RenderPipeline,
-    debug_bind_group: Option<wgpu::BindGroup>,
+    ///pipeline for the debug shaders
+    debug_atlas_pipeline: wgpu::RenderPipeline,
+    debug_streaming_pipeline: wgpu::RenderPipeline,
+    debug_atlas_bind_group: Option<wgpu::BindGroup>,
+    debug_streaming_bind_group: Option<wgpu::BindGroup>,
 }
 
 impl Renderer {
-    //NOTE: wgpu initialiser
     pub(crate) async fn new(window: Arc<Window>) -> Self {
         let instance: wgpu::Instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: CONFIG.backend.into(),
@@ -74,113 +80,42 @@ impl Renderer {
         };
         config.format = wgpu::TextureFormat::Rgba8Unorm;
         surface.configure(&device, &config);
-        let surface_format = config.format;
 
-        let mosaic_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("saic_Mosaic Shader"),
-            source: wgpu::ShaderSource::Wgsl(
-                fs::read_to_string("src/renderer/_mosaic.wgsl")
-                    .expect("cannot read fragment shader")
-                    .into(),
-            ),
-        });
-
-        let debug_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("saic_Debug Shader"),
-            source: wgpu::ShaderSource::Wgsl(
-                fs::read_to_string("src/renderer/_debug.wgsl")
-                    .expect("cannot read fragment shader")
-                    .into(),
-            ),
-        });
-
-        let mosaic_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("saic_Mosaic Pipeline"),
-            layout: None,
-            vertex: wgpu::VertexState {
-                module: &mosaic_shader_module,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &mosaic_shader_module,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: surface_format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview_mask: None,
-            cache: None,
-        });
-
-        let debug_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("saic_Mosaic Pipeline"),
-            layout: None,
-            vertex: wgpu::VertexState {
-                module: &debug_shader_module,
-                entry_point: Some("vs_debug"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &debug_shader_module,
-                entry_point: Some("fs_debug"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: surface_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview_mask: None,
-            cache: None,
-        });
+        let mosaic_pipeline = create_pipeline(
+            &device,
+            config.format,
+            "src/renderer/_mosaic.wgsl",
+            "saic_Mosaic Shader",
+            "saic_Mosaic Pipeline",
+        );
+        let debug_atlas_pipeline = create_pipeline(
+            &device,
+            config.format,
+            "src/renderer/_debug_atlas.wgsl",
+            "saic_Atlas Debug Shader",
+            "saic_Atlas Debug Pipeline",
+        );
+        let debug_streaming_pipeline = create_pipeline(
+            &device,
+            config.format,
+            "src/renderer/_debug_streaming.wgsl",
+            "saic_Streaming Debug Shader",
+            "saic_Streaming Debug Pipeline",
+        );
 
         Self {
             queue,
             device,
             surface,
-            debug_pipeline,
             mosaic_pipeline,
             mosaic_view: None,
             mosaic_texture: None,
+            debug_atlas_pipeline,
             surface_config: config,
-            debug_bind_group: None,
             mosaic_bind_group: None,
+            debug_streaming_pipeline,
+            debug_atlas_bind_group: None,
+            debug_streaming_bind_group: None,
         }
     }
 
@@ -191,6 +126,7 @@ impl Renderer {
         pager_view: &wgpu::TextureView,
         atlas_y_view: &wgpu::TextureView,
         atlas_cbcr_view: &wgpu::TextureView,
+        streaming_debug_tex_view: &wgpu::TextureView,
     ) {
         let (mosaic_view, mosaic_texture) = create_texture(
             &self.device,
@@ -245,23 +181,44 @@ impl Renderer {
             ],
         }));
 
+        self.debug_atlas_bind_group =
+            Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("saic_Atlas Debug Bind Group"),
+                layout: &self.debug_atlas_pipeline.get_bind_group_layout(0),
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: camera_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(atlas_y_view),
+                    },
+                ],
+            }));
+
+        self.debug_streaming_bind_group =
+            Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("saic_Streaming Debug Bind Group"),
+                layout: &self.debug_streaming_pipeline.get_bind_group_layout(0),
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: camera_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(streaming_debug_tex_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(&mosaic_view),
+                    },
+                ],
+            }));
+
         self.mosaic_texture = Some(mosaic_texture);
         self.mosaic_view = Some(mosaic_view);
-
-        self.debug_bind_group = Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("saic_Debug Bind Group"),
-            layout: &self.debug_pipeline.get_bind_group_layout(0),
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: camera_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(atlas_y_view),
-                },
-            ],
-        }))
     }
 
     ///update the gpu side mosaic with the current frame (called once for static mosaics, every video frame for dynamic mosaics)
@@ -297,7 +254,6 @@ impl Renderer {
         self.surface.configure(&self.device, &self.surface_config);
     }
 
-    //NOTE: wgpu renderer
     pub(crate) fn render(&mut self, show_debug: bool) {
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(surface_texture) => surface_texture,
@@ -346,10 +302,19 @@ impl Renderer {
             );
             pass.draw(0..4, 0..1);
             if show_debug {
-                pass.set_pipeline(&self.debug_pipeline);
+                pass.set_pipeline(&self.debug_atlas_pipeline);
                 pass.set_bind_group(
                     0,
-                    self.debug_bind_group
+                    self.debug_atlas_bind_group
+                        .as_ref()
+                        .expect("streaming should be initialised"),
+                    &[],
+                );
+                pass.draw(0..6, 0..1);
+                pass.set_pipeline(&self.debug_streaming_pipeline);
+                pass.set_bind_group(
+                    0,
+                    self.debug_streaming_bind_group
                         .as_ref()
                         .expect("streaming should be initialised"),
                     &[],

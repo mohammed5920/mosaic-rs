@@ -6,8 +6,6 @@ use fast_image_resize::{
     ResizeOptions,
     images::{Image as FRImage, ImageRef as FRImageRef},
 };
-use parking_lot::RwLockReadGuard;
-use rustc_hash::FxHashSet;
 
 use crate::{
     mosaic::{Mosaic, tiles::RESIZER},
@@ -62,13 +60,6 @@ impl TileStore {
         }
     }
 
-    pub(crate) fn read_tracker(&self) -> RwLockReadGuard<'_, FxHashSet<DenseIndex>> {
-        match self {
-            Self::Fast(f) => f.read_tracker(),
-            Self::Smart(s) => s.read_tracker(),
-        }
-    }
-
     pub(crate) fn tile_size(&self) -> u64 {
         match self {
             TileStore::Fast(f) => f.tile_size,
@@ -76,14 +67,35 @@ impl TileStore {
         }
     }
 
-    pub(crate) fn contains_any_tiles(&self, mut indices: impl Iterator<Item = DenseIndex>) -> bool {
-        let tracker = self.read_tracker();
-        indices.any(|idx| tracker.contains(&idx))
+    pub(crate) fn contains_tile(&self, index: DenseIndex) -> bool {
+        match self {
+            Self::Fast(f) => f.contains_tile(index),
+            Self::Smart(s) => s.contains_tile(index),
+        }
     }
 
-    pub(crate) fn contains_all_tiles(&self, mut indices: impl Iterator<Item = DenseIndex>) -> bool {
-        let tracker = self.read_tracker();
-        indices.all(|idx| tracker.contains(&idx))
+    ///tiles that are in the passed indices, but not in the store
+    pub(crate) fn difference(&self, indices: impl Iterator<Item = DenseIndex>) -> Vec<DenseIndex> {
+        match self {
+            Self::Fast(f) => f.difference(indices),
+            Self::Smart(s) => s.difference(indices),
+        }
+    }
+
+    pub(crate) fn contains_any_tiles(
+        &self,
+        indices: impl ExactSizeIterator<Item = DenseIndex>,
+    ) -> bool {
+        let total = indices.len();
+        let diff = self.difference(indices);
+        diff.len() != total
+    }
+
+    pub(crate) fn contains_all_tiles(
+        &self,
+        indices: impl ExactSizeIterator<Item = DenseIndex>,
+    ) -> bool {
+        self.difference(indices).is_empty()
     }
 
     pub(crate) fn write_tiles(&self, tiles: Vec<(DenseIndex, Vec<StoreFrame>)>) {

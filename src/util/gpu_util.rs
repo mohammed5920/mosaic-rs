@@ -1,3 +1,5 @@
+use std::fs;
+
 pub(crate) fn create_texture(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -81,4 +83,59 @@ pub(crate) fn copy_tile_into_atlas(
         dst[dst_off..dst_off + tile_size_bytes]
             .copy_from_slice(&src[src_off..src_off + tile_size_bytes]);
     }
+}
+
+pub(crate) fn create_pipeline(
+    device: &wgpu::Device,
+    surface_format: wgpu::TextureFormat,
+    shader_path: &str,
+    shader_debug_name: &str,
+    pipeline_debug_name: &str,
+) -> wgpu::RenderPipeline {
+    let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some(shader_debug_name),
+        source: wgpu::ShaderSource::Wgsl(
+            fs::read_to_string(shader_path)
+                .unwrap_or_else(|e| format!("cannot read shader at {shader_path} because of {e}"))
+                .into(),
+        ),
+    });
+
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(pipeline_debug_name),
+        layout: None,
+        vertex: wgpu::VertexState {
+            module: &shader_module,
+            entry_point: Some("vs_main"),
+            buffers: &[],
+            compilation_options: Default::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader_module,
+            entry_point: Some("fs_main"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: surface_format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: Default::default(),
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleStrip,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: Some(wgpu::Face::Back),
+            polygon_mode: wgpu::PolygonMode::Fill,
+            unclipped_depth: false,
+            conservative: false,
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        multiview_mask: None,
+        cache: None,
+    })
 }
