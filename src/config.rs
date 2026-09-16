@@ -32,7 +32,7 @@ pub(crate) struct AppConfig {
     //depending on the gap between where the current frame is vs the target frame
     //how big is that gap? not easily discoverable, changes per video and sometimes while playing
     //so this is a best effort guess
-    pub(crate) hard_seek_threshold: NonZero<u64>,
+    pub(crate) hard_seek_threshold: u64,
     pub(crate) zoom_steps_per_octave: NonZero<u64>,
     pub(crate) tile_base_res: NonZero<u64>,
     pub(crate) prefetch_multiplier: NonZero<u64>,
@@ -54,19 +54,19 @@ pub(crate) fn load_config() -> AppConfig {
         Err(e) => {
             eprintln!("{e} - loading default");
             let config = AppConfig {
-                source_path: Utf8PathBuf::from_str("test/test2.jpg").unwrap(),
-                tile_path: Utf8PathBuf::from_str("test/pic_tiles").unwrap(),
-                cache_path: Utf8PathBuf::from_str("cache").unwrap(),
+                source_path: Utf8PathBuf::from_str("test/source.jpg").unwrap(),
+                tile_path: Utf8PathBuf::from_str("test/tiles").unwrap(),
+                cache_path: Utf8PathBuf::from_str("cache.bin").unwrap(),
 
                 is_vsync: true,
                 end_after_init: false,
                 force_static_tiles: false,
-                backend: wgpu::Backend::Gl,
+                backend: wgpu::Backend::Vulkan,
 
                 difference_threshold: 300,
                 ram_percent: 75.0,
                 prefetch_multiplier: NonZero::new(2).unwrap(),
-                hard_seek_threshold: NonZero::new(4).unwrap(),
+                hard_seek_threshold: 3,
                 zoom_steps_per_octave: NonZero::new(30).unwrap(),
                 tile_base_res: NonZero::new(64).unwrap(),
                 video_fps: 24.0,

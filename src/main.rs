@@ -1,6 +1,7 @@
 #[allow(clippy::all)]
 #[allow(clippy::pedantic)]
 use ffmpeg_next as ffmpeg;
+use mimalloc::MiMalloc;
 
 use std::{process::exit, sync::Arc, time::Instant};
 
@@ -29,6 +30,9 @@ mod streamer;
 mod types;
 mod util;
 mod vidcap;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 struct InputState {
     cursor_pos: (f64, f64),
@@ -295,6 +299,7 @@ pub(crate) fn main() {
     set_panic_hook();
     detect_deadlocks();
     ffmpeg::init().expect("could not initialise FFMPEG");
+    ffmpeg::util::log::set_level(ffmpeg::util::log::Level::Error);
     let event_loop: EventLoop<()> = EventLoop::new().expect("could not initialise winit");
     event_loop.set_control_flow(ControlFlow::Wait);
     let mut app = App(None);

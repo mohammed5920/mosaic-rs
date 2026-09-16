@@ -35,6 +35,9 @@ pub(crate) struct VideoCapture {
     decoder: ffmpeg::decoder::Video,
     rgb_scaler: ffmpeg::software::scaling::Context,
     nv_scaler: ffmpeg::software::scaling::Context,
+
+    raw_frame_buffer: ffmpeg::frame::Video,
+    processed_frame_buffer: ffmpeg::frame::Video,
 }
 
 impl VideoCapture {
@@ -119,17 +122,23 @@ impl VideoCapture {
             decoder,
             rgb_scaler,
             nv_scaler,
+
+            raw_frame_buffer: ffmpeg::frame::Video::empty(),
+            processed_frame_buffer: ffmpeg::frame::Video::empty(),
         })
     }
 
-    fn read_raw_frame(&mut self) -> Result<Option<(i64, ffmpeg::frame::Video)>, ffmpeg::Error> {
-        let mut raw_frame = ffmpeg::frame::Video::empty();
-
+    ///writes to the local raw frame buffer, wrapped by read_rgb or read_nv to actually emit a new buffer
+    fn read_raw_frame(&mut self) -> Result<Option<i64>, ffmpeg::Error> {
         //one packet can represent 0..N frames... so we have to dance a little bit
         let res = 'decode: loop {
             //check if frame is buffered
-            if self.decoder.receive_frame(&mut raw_frame).is_ok() {
-                break 'decode Ok(Some(raw_frame));
+            if self
+                .decoder
+                .receive_frame(&mut self.raw_frame_buffer)
+                .is_ok()
+            {
+                break 'decode Ok(Some(()));
             }
 
             //no buffered frame, were we at the end of the file?
@@ -154,15 +163,16 @@ impl VideoCapture {
             }
         };
 
-        let raw_frame = match res {
+        match res {
+            Ok(Some(_)) => {}
             Ok(None) => return Ok(None),
-            Ok(Some(raw_frame)) => raw_frame,
             Err(e) => {
                 eprintln!("{} - {e} while seeking", self.path);
                 return Err(e);
             }
         };
-        let Some(frame_idx) = raw_frame.timestamp().and_then(|ts| {
+
+        let Some(frame_idx) = self.raw_frame_buffer.timestamp().and_then(|ts| {
             frame_idx_from_pts(
                 self.stream_time_base,
                 self.stream_frame_rate,
@@ -174,7 +184,7 @@ impl VideoCapture {
             return Err(ffmpeg::Error::InvalidData);
         };
         self.last_decoded_frame_index = Some(frame_idx);
-        Ok(Some((frame_idx, raw_frame)))
+        Ok(Some(frame_idx))
     }
 
     ///this will seek such that calling the next read_frame() gives you the n=target_frame frame
@@ -190,8 +200,7 @@ impl VideoCapture {
         if self.last_decoded_frame_index.is_none_or(|i| {
             target_frame < i
                 || (target_frame - i)
-                    > CONFIG.hard_seek_threshold.get() as i64
-                        * self.stream_frame_rate.numerator() as i64
+                    > CONFIG.hard_seek_threshold as i64 * self.stream_frame_rate.numerator() as i64
                         / self.stream_frame_rate.denominator() as i64
         }) {
             let target_ts = target_frame * self.stream_frame_rate.denominator() as i64
@@ -209,7 +218,7 @@ impl VideoCapture {
 
         loop {
             match self.read_raw_frame()? {
-                Some((frame_idx, _)) if frame_idx + 1 > target_frame => {
+                Some(frame_idx) if frame_idx + 1 > target_frame => {
                     eprintln!(
                         "{} has sought ahead from target frame {} to frame {}...",
                         self.path,
@@ -218,7 +227,7 @@ impl VideoCapture {
                     );
                     return Err(ffmpeg::Error::Bug);
                 }
-                Some((frame_idx, _)) if frame_idx + 1 == target_frame => return Ok(()),
+                Some(frame_idx) if frame_idx + 1 == target_frame => return Ok(()),
                 Some(_) => {}
                 //may be worth figuring out how to store video duration for early returning if we hit this constantly
                 None => return Err(ffmpeg::Error::Eof),
@@ -228,19 +237,19 @@ impl VideoCapture {
 
     ///returns None if the video has ended
     pub(crate) fn read_rgb_frame(&mut self) -> Result<Option<RgbVideoFrame>, ffmpeg::Error> {
-        let (_, raw_frame) = match self.read_raw_frame() {
+        match self.read_raw_frame() {
             Ok(None) => return Ok(None),
             Err(e) => return Err(e),
-            Ok(Some(raw_frame)) => raw_frame,
+            Ok(Some(_)) => {}
         };
-        let mut rgb_frame = ffmpeg::frame::Video::empty();
-        self.rgb_scaler.run(&raw_frame, &mut rgb_frame)?;
+        self.rgb_scaler
+            .run(&self.raw_frame_buffer, &mut self.processed_frame_buffer)?;
 
         //stride = width + alignment padding
-        let stride = rgb_frame.stride(0) as u64;
-        let data = rgb_frame.data(0);
-        let frame_width = rgb_frame.width() as u64;
-        let frame_height = rgb_frame.height() as u64;
+        let stride = self.processed_frame_buffer.stride(0) as u64;
+        let data = self.processed_frame_buffer.data(0);
+        let frame_width = self.processed_frame_buffer.width() as u64;
+        let frame_height = self.processed_frame_buffer.height() as u64;
 
         let (out_width, out_height, x_start, y_start) = match self.cropped_square_size {
             Some(size) => {
@@ -262,17 +271,17 @@ impl VideoCapture {
 
     ///returns None if the video has ended
     pub(crate) fn read_nv_frame(&mut self) -> Result<Option<NvVideoFrame>, ffmpeg::Error> {
-        let (_, raw_frame) = match self.read_raw_frame() {
+        match self.read_raw_frame() {
             Ok(None) => return Ok(None),
             Err(e) => return Err(e),
-            Ok(Some(raw_frame)) => raw_frame,
+            Ok(Some(_)) => {}
         };
 
-        let mut nv_frame = ffmpeg::frame::Video::empty();
-        self.nv_scaler.run(&raw_frame, &mut nv_frame)?;
+        self.nv_scaler
+            .run(&self.raw_frame_buffer, &mut self.processed_frame_buffer)?;
 
-        let frame_width = nv_frame.width() as u64;
-        let frame_height = nv_frame.height() as u64;
+        let frame_width = self.processed_frame_buffer.width() as u64;
+        let frame_height = self.processed_frame_buffer.height() as u64;
 
         let (out_width, out_height, x_start, y_start) = match self.cropped_square_size {
             Some(size) => {
@@ -289,8 +298,8 @@ impl VideoCapture {
 
         //luma plane: full resolution
         let y_plane = extract_plane(
-            nv_frame.data(0),
-            nv_frame.stride(0) as u64,
+            self.processed_frame_buffer.data(0),
+            self.processed_frame_buffer.stride(0) as u64,
             x_start,
             y_start,
             out_width,
@@ -302,8 +311,8 @@ impl VideoCapture {
         let (cw, ch) = (out_width.div_ceil(2), out_height.div_ceil(2));
         let (cx, cy) = (x_start / 2, y_start / 2);
         let cb_cr_plane = extract_plane(
-            nv_frame.data(1),
-            nv_frame.stride(1) as u64,
+            self.processed_frame_buffer.data(1),
+            self.processed_frame_buffer.stride(1) as u64,
             cx,
             cy,
             cw,

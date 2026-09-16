@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU16, Ordering},
         mpsc::{Receiver, Sender},
     },
 };
@@ -285,7 +285,7 @@ pub(crate) fn streamer_thread(
             },
             || {
                 benchmark(
-                    &format!("streaming in {} videos at {super_res}x{super_res}", {
+                    &format!("streaming in {} video tiles at {super_res}x{super_res}", {
                         vid_tiles.len()
                     }),
                     || {
@@ -303,6 +303,8 @@ pub(crate) fn streamer_thread(
                         }
                         let is_multithreaded =
                             videos.len() < std::thread::available_parallelism().unwrap().get() / 2;
+                        let all_len = videos.len();
+                        let prog = AtomicU16::new(0);
                         let all: Vec<(DenseIndex, Vec<StoreFrame>)> = videos
                             .into_par_iter()
                             .map(|(path, mut tiles)| {
@@ -318,6 +320,10 @@ pub(crate) fn streamer_thread(
                                     is_multithreaded,
                                     kill_flag_ref.clone(),
                                 );
+
+                                let local_prog = prog.load(Ordering::Relaxed);
+                                prog.store(local_prog + 1, Ordering::Relaxed);
+                                println!("streaming video {} / {all_len}", local_prog + 1);
 
                                 frames
                                     .into_iter()

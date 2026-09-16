@@ -32,6 +32,8 @@ sysinfo = { version = "0.39.6", default-features = false, features = ["system"] 
 crossbeam = { version = "0.8.5", default-features = false, features = ["std", "crossbeam-channel"] }
 #lru tracking
 lru = { version = "0.18.4", features = ["hashbrown"] }
+#faster allocator (by default we get way too much churn)
+mimalloc = { version = "0.1.52", default-features = false, features = ["override", "v2", "win_direct_tls"] }
 
 ##media stuff
 #serialising video cache files
