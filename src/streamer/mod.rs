@@ -225,12 +225,12 @@ impl Streamer {
         self.is_streaming_dirty = true;
         self.is_atlas_dirty = true;
         // self.stream_kill_flag.store(true, Ordering::Relaxed);
-        if camera.is_zoomed_in() {
-            self.last_frame_visible_bb = None;
+        if self.last_frame_visible_bb.is_some() {
             self.visibility_set.write().drain();
             self.visibility_map.iter_mut().for_each(|v| *v = 0);
-            self.update_visibility(camera, mosaic);
         }
+        self.last_frame_visible_bb = None;
+        self.update_visibility(camera, mosaic);
     }
 
     ///call when shutting down, or the bg thread panics when the main thread exits
