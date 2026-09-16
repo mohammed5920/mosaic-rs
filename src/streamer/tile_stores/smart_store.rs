@@ -42,9 +42,9 @@ impl SmartStore {
     }
 
     pub(crate) fn write_tiles(&self, tiles: Vec<(DenseIndex, Vec<StoreFrame>)>) {
+        let mut inner_guard = self.inner.write();
+        let mut tracker_guard = self.tracker.write();
         for (tile_index, frames) in tiles {
-            let mut inner_guard = self.inner.write();
-            let mut tracker_guard = self.tracker.write();
             inner_guard.insert(tile_index, frames);
             tracker_guard.push(tile_index, ());
         }

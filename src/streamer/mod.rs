@@ -417,6 +417,8 @@ impl Streamer {
         }
     }
 
+    //draws a palette sized heatmap of which tile is loaded in which store
+    //quick and dirty, but slow
     pub(crate) fn write_debug_texture(
         &self,
         queue: &wgpu::Queue,

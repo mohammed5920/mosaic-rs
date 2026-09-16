@@ -48,11 +48,11 @@ impl FastStore {
 
     pub(crate) fn write_tiles(&self, tiles: Vec<(DenseIndex, Vec<StoreFrame>)>) {
         let frame_size = self.tile_size.pow(2) as usize;
+        let mut tracker_guard = self.tracker.write();
+        let mut y_guard = self.y_arena.write();
+        let mut cbcr_guard = self.cbcr_arena.write();
         for (tile_index, frames) in tiles {
             let store_index = self.index_map[tile_index.0 as usize].0 as usize;
-            let mut tracker_guard = self.tracker.write();
-            let mut y_guard = self.y_arena.write();
-            let mut cbcr_guard = self.cbcr_arena.write();
             for (i, frame) in frames.iter().enumerate() {
                 let y_offset = (store_index + i) * frame_size;
                 let cbcr_offset = y_offset / 2;
