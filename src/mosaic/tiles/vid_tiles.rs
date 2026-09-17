@@ -31,7 +31,7 @@ impl VidTile {
         end_frame_index: u32,
     ) -> Self {
         debug_assert!(
-            (end_frame_index as i64 - start_frame_index as i64) >= 0,
+            (end_frame_index as i64 - start_frame_index as i64) > 0,
             "{} - starts at {} but ends at {}",
             source_path,
             start_frame_index,
@@ -86,7 +86,7 @@ pub(crate) fn get_start_end_frame_indices(colours: &[[u8; 3]]) -> FxHashMap<usiz
         };
     }
     //ensure the end of the video is added as a tile as well
-    res.insert(last_start_index, colours.len() - 1);
+    res.insert(last_start_index, colours.len());
     res
 }
 //
