@@ -258,8 +258,8 @@ pub(crate) fn streamer_thread(
                                     p.stream_in(super_res)
                                         //maybe we could skip this tile, but if it was loaded in and processed before,
                                         //that means the image is fine and it's the streaming that's wonky...
-                                        .unwrap_or_else(|_| {
-                                            panic!("could not stream in pic tile {idx:?}")
+                                        .unwrap_or_else(|e| {
+                                            panic!("could not stream in pic tile {idx:?}: {e}")
                                         }),
                                 ];
                                 Some((idx, res))
@@ -321,8 +321,7 @@ pub(crate) fn streamer_thread(
                                     kill_flag_ref.clone(),
                                 );
 
-                                let local_prog = prog.load(Ordering::Relaxed);
-                                prog.store(local_prog + 1, Ordering::Relaxed);
+                                let local_prog = prog.fetch_add(1, Ordering::Relaxed);
                                 println!("streaming video {} / {all_len}", local_prog + 1);
 
                                 frames

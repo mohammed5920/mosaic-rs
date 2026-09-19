@@ -1,4 +1,4 @@
-use anyhow::anyhow;
+use anyhow::{Context, anyhow};
 use fast_image_resize::{
     FilterType, PixelType, ResizeAlg::Convolution, ResizeOptions, images::Image as FRImage,
 };
@@ -19,13 +19,13 @@ pub(crate) struct PicTile {
     pub(crate) source_path: String,
 }
 
-fn open_image(path: &str) -> Result<DynamicImage, String> {
+fn open_image(path: &str) -> anyhow::Result<DynamicImage> {
     let res = ImageReader::open(path)
-        .map_err(|e| format!("error opening {path}: {e:?}"))?
+        .with_context(|| format!("error opening {path}"))?
         .with_guessed_format()
-        .map_err(|e| format!("error guessing {path}: {e:?}"))?
+        .with_context(|| format!("error guessing {path}"))?
         .decode()
-        .map_err(|e| format!("error decoding {path}: {e:?}"))?;
+        .with_context(|| format!("error decoding {path}"))?;
     Ok(res)
 }
 
@@ -52,7 +52,7 @@ fn image_to_tile(rgb_image: &RgbImage, tile_size: u64) -> FRImage<'_> {
 }
 
 impl PicTile {
-    pub(crate) fn new(path: &str) -> Result<PicTile, String> {
+    pub(crate) fn new(path: &str) -> anyhow::Result<PicTile> {
         Ok(PicTile {
             average_colour: calc_average_colour(&open_image(path)?.into_rgb8().into_raw()),
             source_path: path.to_string(),

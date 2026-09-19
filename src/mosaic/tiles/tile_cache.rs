@@ -115,10 +115,12 @@ pub(crate) fn load_pic_tile(cache: &Cache, path: String) -> Option<PicTile> {
     match PicTile::new(&path) {
         Err(e) => {
             eprintln!("{}", e);
-            cache
-                .pic_cache
-                .write()
-                .insert(hash, CacheValue::Unreadable { reason: e });
+            cache.pic_cache.write().insert(
+                hash,
+                CacheValue::Unreadable {
+                    reason: e.to_string(),
+                },
+            );
             None
         }
         Ok(p) => {

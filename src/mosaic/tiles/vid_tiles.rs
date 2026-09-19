@@ -3,6 +3,7 @@ use {
         config::CONFIG, mosaic::tiles::calc_average_colour, streamer::tile_stores::StoreFrame,
         util::vid_util::is_fixed_frame_rate, vidcap::VideoCapture,
     },
+    anyhow::bail,
     camino::Utf8Path,
     rustc_hash::{FxBuildHasher, FxHashMap},
     std::{
@@ -95,17 +96,17 @@ pub(crate) fn get_start_end_frame_indices(colours: &[[u8; 3]]) -> FxHashMap<usiz
 
 pub(crate) fn process_video_for_vidtiles(
     source_path: Arc<Utf8Path>,
-) -> Result<Vec<[u8; 3]>, String> {
+) -> anyhow::Result<Vec<[u8; 3]>> {
     match is_fixed_frame_rate(source_path.as_str()) {
-        Ok(false) => return Err(format!("{source_path} is variable refresh-rate")),
-        Err(e) => return Err(format!("Could not probe {source_path} because {e}")),
+        Ok(false) => bail!("{source_path} is variable refresh-rate"),
+        Err(e) => bail!("Could not probe {source_path} because {e}"),
         Ok(true) => {}
     }
 
     let mut cap =
         match VideoCapture::new(source_path.clone(), Some(CONFIG.tile_base_res.get()), false) {
             Ok(cap) => cap,
-            Err(e) => return Err(format!("{e} while opening {source_path} as capture")),
+            Err(e) => bail!("{e} while opening {source_path} as capture"),
         };
 
     let mut colours = Vec::new();
@@ -113,7 +114,7 @@ pub(crate) fn process_video_for_vidtiles(
         let curr_frame = match cap.read_rgb_frame() {
             Ok(Some(f)) => f,
             Ok(None) => break,
-            Err(e) => return Err(format!("{e} while streaming {source_path}")),
+            Err(e) => bail!("{e} while streaming {source_path}"),
         };
 
         let curr_colour = calc_average_colour(&curr_frame.rgb);
@@ -144,11 +145,7 @@ pub(crate) fn stream_tiles_from_video<'a>(
                 .read_nv_frame()
                 .unwrap_or_else(|e| panic!("unable to stream {path}: {e}"))
                 .unwrap_or_else(|| {
-                    panic!(
-                        "video {} ended prematurely at frame {}",
-                        path,
-                        tile.start_frame_index + frame_idx
-                    )
+                    panic!("video {} ended prematurely at frame {}", path, frame_idx)
                 });
 
             per_tile_res.push(StoreFrame::new(frame.y, frame.cb_cr, resolution));

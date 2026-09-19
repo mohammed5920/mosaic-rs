@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::{Context, bail};
 use camino::Utf8Path;
 use ffmpeg_next as ffmpeg;
 
@@ -45,16 +46,13 @@ impl VideoCapture {
         path: Arc<Utf8Path>,
         cropped_square_size: Option<u64>,
         is_multithreaded: bool,
-    ) -> Result<Self, ffmpeg::Error> {
+    ) -> anyhow::Result<Self> {
         let input = ffmpeg::format::input(path.as_str())?;
 
         let stream = input
             .streams()
             .best(ffmpeg::media::Type::Video)
-            .ok_or_else(|| {
-                eprintln!("{path} - no valid streams found");
-                ffmpeg::Error::StreamNotFound
-            })?;
+            .with_context(|| format!("{path} - no valid streams found"))?;
         let stream_index = stream.index();
         let stream_start_time = stream.start_time();
         let stream_frame_rate = stream.avg_frame_rate();
@@ -129,7 +127,7 @@ impl VideoCapture {
     }
 
     ///writes to the local raw frame buffer, wrapped by read_rgb or read_nv to actually emit a new buffer
-    fn read_raw_frame(&mut self) -> Result<Option<i64>, ffmpeg::Error> {
+    fn read_raw_frame(&mut self) -> anyhow::Result<Option<i64>> {
         //one packet can represent 0..N frames... so we have to dance a little bit
         let res = 'decode: loop {
             //check if frame is buffered
@@ -138,12 +136,12 @@ impl VideoCapture {
                 .receive_frame(&mut self.raw_frame_buffer)
                 .is_ok()
             {
-                break 'decode Ok(Some(()));
+                break 'decode Some(());
             }
 
             //no buffered frame, were we at the end of the file?
             if self.is_eof_sent {
-                break 'decode Ok(None);
+                break 'decode None;
             }
 
             //no we weren't, so let's read a bit more
@@ -163,14 +161,7 @@ impl VideoCapture {
             }
         };
 
-        match res {
-            Ok(Some(_)) => {}
-            Ok(None) => return Ok(None),
-            Err(e) => {
-                eprintln!("{} - {e} while seeking", self.path);
-                return Err(e);
-            }
-        };
+        let Some(_) = res else { return Ok(None) };
 
         let Some(frame_idx) = self.raw_frame_buffer.timestamp().and_then(|ts| {
             frame_idx_from_pts(
@@ -180,15 +171,14 @@ impl VideoCapture {
                 ts,
             )
         }) else {
-            eprintln!("{} - couldn't calculate frame_idx", self.path);
-            return Err(ffmpeg::Error::InvalidData);
+            bail!("{} - couldn't calculate frame_idx", self.path)
         };
         self.last_decoded_frame_index = Some(frame_idx);
         Ok(Some(frame_idx))
     }
 
     ///this will seek such that calling the next read_frame() gives you the n=target_frame frame
-    pub(crate) fn seek_to_frame(&mut self, target_frame: i64) -> Result<(), ffmpeg::Error> {
+    pub(crate) fn seek_to_frame(&mut self, target_frame: i64) -> anyhow::Result<()> {
         if self
             .last_decoded_frame_index
             .is_some_and(|i| target_frame == i + 1)
@@ -218,25 +208,22 @@ impl VideoCapture {
 
         loop {
             match self.read_raw_frame()? {
-                Some(frame_idx) if frame_idx + 1 > target_frame => {
-                    eprintln!(
-                        "{} has sought ahead from target frame {} to frame {}...",
-                        self.path,
-                        target_frame - 1,
-                        frame_idx
-                    );
-                    return Err(ffmpeg::Error::Bug);
-                }
+                Some(frame_idx) if frame_idx + 1 > target_frame => bail!(
+                    "{} has sought ahead from target frame {} to frame {}...",
+                    self.path,
+                    target_frame - 1,
+                    frame_idx
+                ),
                 Some(frame_idx) if frame_idx + 1 == target_frame => return Ok(()),
                 Some(_) => {}
                 //may be worth figuring out how to store video duration for early returning if we hit this constantly
-                None => return Err(ffmpeg::Error::Eof),
+                None => bail!("hit end of file while seeking"),
             }
         }
     }
 
     ///returns None if the video has ended
-    pub(crate) fn read_rgb_frame(&mut self) -> Result<Option<RgbVideoFrame>, ffmpeg::Error> {
+    pub(crate) fn read_rgb_frame(&mut self) -> anyhow::Result<Option<RgbVideoFrame>> {
         match self.read_raw_frame() {
             Ok(None) => return Ok(None),
             Err(e) => return Err(e),
@@ -270,7 +257,7 @@ impl VideoCapture {
     }
 
     ///returns None if the video has ended
-    pub(crate) fn read_nv_frame(&mut self) -> Result<Option<NvVideoFrame>, ffmpeg::Error> {
+    pub(crate) fn read_nv_frame(&mut self) -> anyhow::Result<Option<NvVideoFrame>> {
         match self.read_raw_frame() {
             Ok(None) => return Ok(None),
             Err(e) => return Err(e),
