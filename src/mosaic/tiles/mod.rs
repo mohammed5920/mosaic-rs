@@ -93,8 +93,8 @@ pub(crate) fn load_tiles(path: &Utf8PathBuf) -> anyhow::Result<Vec<Tile>> {
         .map(Tile::Vid)
         .collect();
 
-    //prioritising filtering videos that are longer
-    vids.sort_unstable_by_key(|t| t.frame_count());
+    //prioritising filtering videos that are shorter
+    vids.sort_unstable_by_key(|t| -(t.frame_count() as i32));
     res.append(&mut vids);
 
     let mut colour_key_set = HashSet::with_hasher(FxBuildHasher);

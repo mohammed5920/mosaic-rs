@@ -53,7 +53,13 @@ impl StaticMosaic {
                 .collect::<Vec<_>>();
             (new_tiles, dense_matches)
         });
-
+        println!(
+            "using {}/{} tiles for this mosaic ({}% - {} frames)",
+            new_tiles.len(),
+            tiles.len(),
+            (new_tiles.len() as f64 / tiles.len() as f64) * 100.0,
+            new_tiles.iter().map(|tile| tile.frame_count()).sum::<u64>()
+        );
         Ok(Self {
             tiles: new_tiles.into(),
             dense_matches,

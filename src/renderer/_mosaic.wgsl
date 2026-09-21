@@ -18,8 +18,10 @@ var palette_texture: texture_2d<f32>;
 @group(0) @binding(3)
 var pager_texture: texture_2d<u32>;
 @group(0) @binding(4)
-var atlas_y_texture: texture_2d<f32>;
+var atlas_sampler: sampler;
 @group(0) @binding(5)
+var atlas_y_texture: texture_2d<f32>;
+@group(0) @binding(6)
 var atlas_cbcr_texture: texture_2d<f32>;
 
 @vertex
@@ -33,8 +35,9 @@ fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> VertexOutput {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let zoom = pow(2.0, f32(camera.zoom_steps) / f32(camera.steps_per_octave));
-    let raw_exp = (camera.zoom_steps + i32(camera.steps_per_octave) - 1) / i32(camera.steps_per_octave);
-    let tile_size = u32(clamp(pow(2.0, f32(raw_exp)), 1.0, 99999.0));
+    let raw_exponent = (camera.zoom_steps + i32(camera.steps_per_octave) - 1) / i32(camera.steps_per_octave);
+    
+    let tile_size = clamp(pow(2.0, f32(raw_exponent)), 1.0, 99999.0);
     let screen_centered = in.screen_position.xy - camera.viewport * 0.5;
     let world_pos = camera.center + screen_centered / zoom;
 
@@ -44,36 +47,43 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         return vec4<f32>(0.0, 0.0, 0.0, 1.0); //oob
     }
 
-    //they're always the same size
-    let x = u32(world_pos.x);
-    let y = u32(world_pos.y);
-    let dense_index = textureLoad(mosaic_texture, vec2(x, y), 0).r;
+    let dense_index = textureLoad(mosaic_texture, vec2<u32>(world_pos), 0).r;
+    let pager_width = textureDimensions(palette_texture).x;
+    let pager_entry = textureLoad(pager_texture, vec2(dense_index % pager_width, dense_index / pager_width), 0).rgba;
+    if pager_entry.r == 0u || tile_size == 1. {
+        return textureLoad(palette_texture, vec2(dense_index % pager_width, dense_index / pager_width), 0).rgba;
+    } 
 
-    let palette_pager_width = textureDimensions(palette_texture).x;
-    let pager_entry = textureLoad(pager_texture, vec2(dense_index % palette_pager_width, dense_index / palette_pager_width), 0).rgba;
-    if pager_entry.r == 0u || tile_size == 1u {
-        return textureLoad(palette_texture, vec2(dense_index % palette_pager_width, dense_index / palette_pager_width), 0).rgba;
-    } else {
-        let decoded = pager_entry.r - 1u;
-        let atlas_width = textureDimensions(atlas_y_texture).x;
-        let tiles_per_row = atlas_width/tile_size;
-        let offset_x = decoded % tiles_per_row;
-        let offset_y = decoded / tiles_per_row;
+    let decoded = pager_entry.r - 1u;
+    let atlas_dims = textureDimensions(atlas_y_texture);
+    let tiles_per_row = atlas_dims.x/u32(tile_size);
+    let offset_x = decoded % tiles_per_row;
+    let offset_y = decoded / tiles_per_row;
 
-        let local_frac = fract(world_pos);
-        let local_offset = vec2<u32>(local_frac * f32(tile_size));
-        let atlas_pixel_x = offset_x * tile_size + local_offset.x;
-        let atlas_pixel_y = offset_y * tile_size + local_offset.y;
-        let y_plane_pixel = textureLoad(atlas_y_texture, vec2(atlas_pixel_x, atlas_pixel_y), 0).r;
-        let cbcr_plane_pixel = textureLoad(atlas_cbcr_texture, vec2(atlas_pixel_x/2u, atlas_pixel_y/2u), 0).rg;
+    let tile_start = vec2<f32>(f32(offset_x), f32(offset_y)) * tile_size;
+    let tile_local_offset = fract(world_pos) * tile_size;
 
-        let cb = cbcr_plane_pixel.r - 0.5;
-        let cr = cbcr_plane_pixel.g - 0.5;
+    //clamp the sampler so it doesnt blend between unrelated tiles
+    let y_px = tile_start + clamp(tile_local_offset, vec2<f32>(0.5), vec2<f32>(tile_size - 0.5));
+    //double the clamp range for the chroma range since it's half res
+    let c_px = tile_start + clamp(tile_local_offset, vec2<f32>(1.0), vec2<f32>(tile_size - 1.0));
 
-        let r = y_plane_pixel + 1.402 * cr;
-        let g = y_plane_pixel - 0.344136 * cb - 0.714136 * cr;
-        let b = y_plane_pixel + 1.772 * cb;
+    let y_plane_pixel = textureSampleLevel(atlas_y_texture, atlas_sampler, y_px / vec2<f32>(atlas_dims), 0.0).r;
+    let cbcr_plane_pixel  = textureSampleLevel(atlas_cbcr_texture, atlas_sampler, c_px / vec2<f32>(atlas_dims), 0.0).rg;
 
-        return vec4<f32>(r, g, b, 1.0);
-    }
+    let cb = cbcr_plane_pixel.r - 0.5;
+    let cr = cbcr_plane_pixel.g - 0.5;
+
+    let r = y_plane_pixel + 1.402 * cr;
+    let g = y_plane_pixel - 0.344136 * cb - 0.714136 * cr;
+    let b = y_plane_pixel + 1.772 * cb;
+    var rgb = vec3(r,g,b);
+
+    // for tile size = 2 (zoom start), slowly introduce the tiles to avoid heavy shimmering
+    if tile_size == 2. {
+        let avg_color = textureLoad(palette_texture, vec2(dense_index % pager_width, dense_index / pager_width), 0).rgb;
+        rgb = mix(avg_color, rgb, log2(zoom));
+    } 
+
+    return vec4<f32>(rgb, 1.0);
 }

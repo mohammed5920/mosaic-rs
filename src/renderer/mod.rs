@@ -150,6 +150,14 @@ impl Renderer {
             Some((bytemuck::cast_slice(&palette_raw), 4)),
         );
 
+        let atlas_sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+
         self.mosaic_bind_group = Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("saic_Streaming Bind Group"),
             layout: &self.mosaic_pipeline.get_bind_group_layout(0),
@@ -172,10 +180,14 @@ impl Renderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
-                    resource: wgpu::BindingResource::TextureView(atlas_y_view),
+                    resource: wgpu::BindingResource::Sampler(&atlas_sampler),
                 },
                 wgpu::BindGroupEntry {
                     binding: 5,
+                    resource: wgpu::BindingResource::TextureView(atlas_y_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
                     resource: wgpu::BindingResource::TextureView(atlas_cbcr_view),
                 },
             ],
