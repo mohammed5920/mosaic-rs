@@ -79,13 +79,15 @@ pub(crate) fn streamer_thread(
     //closures
     //
 
-    let smart_stores = tile_stores_ref
+    let mut smart_stores = tile_stores_ref
         .iter()
         .filter_map(|s| match s {
             TileStore::Fast(_) => None,
             TileStore::Smart(s) => Some(s),
         })
         .collect::<Vec<_>>();
+
+    smart_stores.sort_unstable_by_key(|s| -(s.tile_size as i32));
 
     loop {
         //
@@ -166,41 +168,57 @@ pub(crate) fn streamer_thread(
                 .map(|(i, _)| tile_ram_usage(*i, super_res))
                 .sum::<u64>();
 
-        if ((current_usage + requested) as i64) >= pool_size_bytes {
-            let needed = (current_usage + requested) as i64 - pool_size_bytes;
-            let mut freed = 0;
-            let mut freeing_stage = 1;
-            'freeing: loop {
-                for ts in &smart_stores {
-                    for idx in ts.get_least_used() {
-                        // #1 - tile is not on screen at any size
-                        // #2 - tile is on screen, but not at this size, and a higher res tile exists
-                        // #3 - tile is on screen, but not at this size, and a higher res tile does not exist but tile will not be downscaled from
-                        if (freeing_stage == 1 && !onscreen_set_ref.read().contains(&idx))
-                            || (freeing_stage == 2
-                                && (ts.tile_size != request_tile_size
-                                    && probe_supertile(idx, ts.tile_size).is_some()))
-                            || (freeing_stage == 3
-                                && (ts.tile_size != request_tile_size
-                                    && !cached_tiles.iter().any(|j| j.idx == idx)))
-                        {
-                            freed += ts.free_tile(idx);
-                            if freed as i64 >= needed {
-                                break 'freeing;
+        if ((current_usage + requested) as i64) > pool_size_bytes {
+            benchmark("freeing RAM", || {
+                let needed = (current_usage + requested) as i64 - pool_size_bytes;
+                let mut freed = 0;
+                let mut freeing_stage = 1;
+                'freeing: loop {
+                    for ts in &smart_stores {
+                        for idx in ts.get_least_used() {
+                            let is_onscreen = onscreen_set_ref.read().contains(&idx);
+                            let is_current_size = ts.tile_size == request_tile_size;
+                            //tile is onscreen at this resolution, cannot be deleted
+                            if is_onscreen && is_current_size {
+                                continue;
+                            };
+                            //tile is going to be downscaled from, cannot be deleted
+                            if is_onscreen && ts.tile_size > request_tile_size && cached_tiles.iter().any(|c| c.idx == idx && c.supertile_size == ts.tile_size) {
+                                continue;
+                            }
+                            let has_supertile = probe_supertile(idx, ts.tile_size).is_some();
+                            //golden rule: panning is more expensive than zooming
+                            //1 - higher res tile exists, not current res
+                            //2 - offscreen, not current res
+                            //3 - onscreen, not current res
+                            //4 - current res
+                            if freeing_stage
+                                == match (is_onscreen, is_current_size, has_supertile) {
+                                    (true, true, _) => unreachable!(),
+                                    (_, false, true) => 1,
+                                    (false, false, _) => 3,
+                                    (true, false, _) => 2,
+                                    (_, true, _) => 4,
+                                }
+                            {
+                                freed += ts.free_tile(idx);
+                                if freed as i64 >= needed {
+                                    break 'freeing;
+                                }
                             }
                         }
                     }
+                    freeing_stage += 1;
+                    if freeing_stage >= 5 {
+                        break;
+                    }
                 }
-                freeing_stage += 1;
-                if freeing_stage >= 4 {
-                    break;
-                }
-            }
-            println!(
-                "needed {} megabytes, reached stage {freeing_stage}, freed {} megabytes",
-                (needed as f64) / 1024.0 / 1024.0,
-                (freed as f64) / 1024.0 / 1024.0
-            );
+                println!(
+                    "needed {} megabytes, reached stage {freeing_stage}, freed {} megabytes",
+                    (needed as f64) / 1024.0 / 1024.0,
+                    (freed as f64) / 1024.0 / 1024.0
+                );
+            });
             if kill_flag_ref.load(Ordering::Relaxed) {
                 end_job(StreamingMessage::CycleEnd {
                     mark_atlas_dirty: false,
@@ -307,9 +325,9 @@ pub(crate) fn streamer_thread(
                         let prog = AtomicU16::new(0);
                         let all: Vec<(DenseIndex, Vec<StoreFrame>)> = videos
                             .into_par_iter()
-                            .map(|(path, mut tiles)| {
+                            .filter_map(|(path, mut tiles)| {
                                 if kill_flag_ref.load(Ordering::Relaxed) {
-                                    return Vec::new();
+                                    return None;
                                 }
 
                                 tiles.sort_unstable_by_key(|(_, t)| t.start_frame_index);
@@ -324,11 +342,13 @@ pub(crate) fn streamer_thread(
                                 let local_prog = prog.fetch_add(1, Ordering::Relaxed);
                                 println!("streaming video {} / {all_len}", local_prog + 1);
 
-                                frames
+                                let res = frames
                                     .into_iter()
                                     .enumerate()
                                     .map(|(i, frames)| (tiles[i].0, frames))
-                                    .collect::<Vec<_>>()
+                                    .collect::<Vec<_>>();
+
+                                Some(res)
                             })
                             .flatten()
                             .collect::<Vec<_>>();
