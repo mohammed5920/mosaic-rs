@@ -105,7 +105,7 @@ impl AppCameraWrapper {
 
     ///is zoomed higher than 100%?
     pub(crate) fn is_zoomed_in(&self) -> bool {
-        self.get_onscreen_tile_size() >= 2
+        self.inner.zoom_factor() > 1.
     }
 
     ///get the bounding box in mosaic coords of what the camera is currently looking at

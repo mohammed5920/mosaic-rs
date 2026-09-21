@@ -32,26 +32,18 @@ fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> VertexOutput {
     return out;
 }
 
-@fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let zoom = pow(2.0, f32(camera.zoom_steps) / f32(camera.steps_per_octave));
-    let raw_exponent = (camera.zoom_steps + i32(camera.steps_per_octave) - 1) / i32(camera.steps_per_octave);
-    
-    let tile_size = clamp(pow(2.0, f32(raw_exponent)), 1.0, 99999.0);
-    let screen_centered = in.screen_position.xy - camera.viewport * 0.5;
-    let world_pos = camera.center + screen_centered / zoom;
-
+fn shade(world_pos: vec2<f32>, tile_size: f32, zoom: f32) -> vec3<f32> {
     let mosaic_dims = textureDimensions(mosaic_texture);
     if (world_pos.x < 0.0 || world_pos.y < 0.0 ||
         world_pos.x >= f32(mosaic_dims.x) || world_pos.y >= f32(mosaic_dims.y)) {
-        return vec4<f32>(0.0, 0.0, 0.0, 1.0); //oob
+        return vec3<f32>(0.); //oob
     }
 
     let dense_index = textureLoad(mosaic_texture, vec2<u32>(world_pos), 0).r;
     let pager_width = textureDimensions(palette_texture).x;
     let pager_entry = textureLoad(pager_texture, vec2(dense_index % pager_width, dense_index / pager_width), 0).rgba;
     if pager_entry.r == 0u || tile_size == 1. {
-        return textureLoad(palette_texture, vec2(dense_index % pager_width, dense_index / pager_width), 0).rgba;
+        return textureLoad(palette_texture, vec2(dense_index % pager_width, dense_index / pager_width), 0).rgb;
     } 
 
     let decoded = pager_entry.r - 1u;
@@ -85,5 +77,28 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         rgb = mix(avg_color, rgb, log2(zoom));
     } 
 
-    return vec4<f32>(rgb, 1.0);
+    return rgb;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let zoom = pow(2.0, f32(camera.zoom_steps) / f32(camera.steps_per_octave));
+    let raw_exponent = (camera.zoom_steps + i32(camera.steps_per_octave) - 1) / i32(camera.steps_per_octave);
+    
+    let tile_size = clamp(pow(2.0, f32(raw_exponent)), 1.0, 99999.0);
+    let screen_centered = in.screen_position.xy - camera.viewport * 0.5;
+    let world_pos = camera.center + screen_centered / zoom;
+
+    //change to 4 for good ssaa at the cost of roughly 10x slower frametimes 
+    let n = 1;
+    let inverse_n = 1.0 / f32(n);
+    var acc = vec3<f32>(0.0);
+    for (var iy = 0; iy < n; iy++) {
+        for (var ix = 0; ix < n; ix++) {
+            let o = (vec2<f32>(f32(ix), f32(iy)) + 0.5) * inverse_n - 0.5;
+            acc += shade(world_pos + o / zoom, tile_size, zoom);
+        }
+    }
+
+    return vec4<f32>(acc * (inverse_n * inverse_n), 1.0);
 }
