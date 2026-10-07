@@ -390,7 +390,7 @@ impl Streamer {
             },
         ) else {
             self.is_atlas_dirty = true;
-            return
+            return;
         };
 
         write_texture(

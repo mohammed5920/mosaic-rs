@@ -183,7 +183,12 @@ pub(crate) fn streamer_thread(
                                 continue;
                             };
                             //tile is going to be downscaled from, cannot be deleted
-                            if is_onscreen && ts.tile_size > request_tile_size && cached_tiles.iter().any(|c| c.idx == idx && c.supertile_size == ts.tile_size) {
+                            if is_onscreen
+                                && ts.tile_size > request_tile_size
+                                && cached_tiles
+                                    .iter()
+                                    .any(|c| c.idx == idx && c.supertile_size == ts.tile_size)
+                            {
                                 continue;
                             }
                             let has_supertile = probe_supertile(idx, ts.tile_size).is_some();
