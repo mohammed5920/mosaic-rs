@@ -115,7 +115,7 @@ impl TileStore {
         indices: impl ExactSizeIterator<Item = DenseIndex>,
         frame_offset: u64,
         closure: impl FnOnce(Vec<(DenseIndex, ReadTileResult)>),
-    ) {
+    ) -> Option<()> {
         match self {
             TileStore::Fast(f) => f.with_tiles(indices, frame_offset, closure),
             TileStore::Smart(s) => s.with_tiles(indices, frame_offset, closure),

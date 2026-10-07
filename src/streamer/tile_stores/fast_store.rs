@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use fast_image_resize::ResizeOptions;
 use parking_lot::RwLock;
@@ -105,12 +105,12 @@ impl FastStore {
         indices: impl ExactSizeIterator<Item = DenseIndex>,
         frame_offset: u64,
         closure: impl FnOnce(Vec<(DenseIndex, ReadTileResult)>),
-    ) {
+    ) -> Option<()> {
         let mut result = Vec::with_capacity(indices.len());
         let frame_size = self.tile_size.pow(2) as usize;
-        let tracker_guard = self.tracker.read();
-        let y_guard = self.y_arena.read();
-        let cbcr_guard = self.cbcr_arena.read();
+        let tracker_guard = self.tracker.try_read_for(Duration::from_millis(1000))?;
+        let y_guard = self.y_arena.try_read_for(Duration::from_millis(1000))?;
+        let cbcr_guard = self.cbcr_arena.try_read_for(Duration::from_millis(1000))?;
 
         for tile_index in indices {
             if !tracker_guard.contains(&tile_index) {
@@ -133,6 +133,7 @@ impl FastStore {
             ));
         }
 
-        closure(result)
+        closure(result);
+        Some(())
     }
 }

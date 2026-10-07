@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use fast_image_resize::ResizeOptions;
 use lru::LruCache;
@@ -93,9 +93,9 @@ impl SmartStore {
         indices: impl ExactSizeIterator<Item = DenseIndex>,
         frame_offset: u64,
         closure: impl FnOnce(Vec<(DenseIndex, ReadTileResult)>),
-    ) {
+    ) -> Option<()> {
         let mut result = Vec::with_capacity(indices.len());
-        let inner_guard = self.inner.read();
+        let inner_guard = self.inner.try_read_for(Duration::from_millis(1000))?;
 
         for tile_index in indices {
             match inner_guard.get(&tile_index) {
@@ -116,7 +116,8 @@ impl SmartStore {
             }
         }
 
-        closure(result)
+        closure(result);
+        Some(())
     }
 
     pub(crate) fn ram_usage_bytes(&self) -> u64 {

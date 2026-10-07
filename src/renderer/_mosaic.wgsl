@@ -90,7 +90,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let world_pos = camera.center + screen_centered / zoom;
 
     //change to 4 for good ssaa at the cost of roughly 10x slower frametimes 
-    let n = 4;
+    let n = 1;
     let inverse_n = 1.0 / f32(n);
     var acc = vec3<f32>(0.0);
     for (var iy = 0; iy < n; iy++) {

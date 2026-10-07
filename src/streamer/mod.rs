@@ -352,7 +352,7 @@ impl Streamer {
         let cbcr_width = self.atlas_cbcr_texture.width() as usize;
         let cbcr_tiles_per_row = self.atlas_cbcr_texture.width() as usize / cbcr_tile_size_px;
 
-        self.stores[tile_size_to_store_index(tile_size as u64)].with_tiles(
+        let Some(()) = self.stores[tile_size_to_store_index(tile_size as u64)].with_tiles(
             visible_guard.iter().copied(),
             frame_offset,
             |results| {
@@ -388,7 +388,10 @@ impl Streamer {
                     }
                 }
             },
-        );
+        ) else {
+            self.is_atlas_dirty = true;
+            return
+        };
 
         write_texture(
             queue,
